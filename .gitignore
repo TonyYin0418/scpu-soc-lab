@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# 本地构建与仿真生成物
+build/*
+!build/.gitkeep
+*.vcd
+
+# Vivado 生成目录和日志（源文件、XDC、脚本不应放入这些目录）
+.Xil/
+*.cache/
+*.gen/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.sim/
+*.jou
+*.log
+*.str
+*.wdb
+*.pb
+*.dcp
+*.bit
+
