@@ -1,10 +1,10 @@
 {
-  "flags": "-f board_files.f",
+  "flags": "-Wno-unused-port -Wno-undriven-port -Wno-unused-but-set-net",
   "index": [
     {
-      "dirs": ["rtl", "sim", "board", "IO", "edf"],
+      "dirs": ["rtl", "sim"],
       "excludeDirs": ["build", "obj", "work", ".git", "node_modules"]
     }
   ],
-  "build": "board_files.f"
+  "build": "board_deps.f"
 }

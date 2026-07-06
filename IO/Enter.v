@@ -20,9 +20,9 @@
 //////////////////////////////////////////////////////////////////////////////////
 module   Enter(input clk,
                 input[4:0] BTN,	 // äº”ä¸ªæŒ‰é”®
-                input[15:0] SW, // ï¿??ï¿??
+                input[15:0] SW, // switch input
                 output[4:0] BTN_out,
-                output[15:0] SW_out // ï¿??ï¿??
+                output[15:0] SW_out // switch output
             );
 	// TODO é˜²æŠ–
 

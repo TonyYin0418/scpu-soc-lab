@@ -31,7 +31,9 @@ iverilog -g2012 -Wall -s sccomp_tb -o build/simv -f files.f
 
 预期结果：命令退出且没有 error。当前基线下也不应出现 warning。
 
-`files.f` 供原单周期 Icarus 仿真使用；当前 slang-server 为检查板级顶层而使用 `board_files.f`。两个 filelist 分开是为了避免自己的 `rtl/SCPU.v` 与老师同名但接口不同的 `edf/SCPU.v` 冲突。
+`files.f` 供原单周期 Icarus 仿真使用，`board_files.f` 供完整板级接口检查使用。当前 slang-server 通过 `.slang/server.json` 的 `build` 字段使用不含 `top.v` 的 `board_deps.f`，由服务端只加入一次当前打开的顶层，以规避 1.28.1 WASM 的重复/孤立分析问题。不要再在 `flags` 中写 `-f`。这些 filelist 分开也能避免自己的 `rtl/SCPU.v` 与老师同名但接口不同的 `edf/SCPU.v` 冲突。
+
+若 Problems 又出现整页 `unknown module` 或 `duplicate definition of top`，执行 **Verilog: Set slang-server Build File** 并选择 `board_deps.f`，再执行 **Verilog: Restart slang-server**。新版插件的会话级 Build File 会覆盖 JSON 中的默认值，因此不能选择 `board_files.f`。
 
 ## 4. 运行回归测试
 
