@@ -4,11 +4,11 @@
 
 ## 1. 当前状态
 
-目前已经完成 37 条指令单周期 CPU 的 RTL 与自检仿真，也已经按老师原理图建立 `board/top.v`。板级顶层当前先连接老师的 `edf/SCPU.edf` 和外围 EDF，并已在 Vivado 中使用 `I_mem.coe`、`D_mem.coe` 完成一次 bitstream 生成和 Program Device 实板验证。
+目前已经完成 37 条指令单周期 CPU 的 RTL 与自检仿真，也已经按老师原理图建立 `board/top.v`。板级顶层先用老师的 `edf/SCPU.edf` 完成外围基线验证，随后已将 `edf/SCPU.edf` 替换为自己的 `rtl/SCPU.v`，并在 Vivado 中使用 `I_mem.coe`、`D_mem.coe` 完成 bitstream 生成和 Program Device 实板验证。
 
-当前老师 EDF 板级外壳基线已经能运行参考 IO 程序：跑马灯、0~F 显示、寄存器递增等功能符合要求。矩形/图形变化模式存在遗留差异：`SW[0]=0` 文本模式能显示 `D_mem.coe` 中 `0x60` 起始的图形表数据，例如 `557EF7E0`，但 `SW[0]=1` 图形模式的实际图案与参考矩形效果不一致。该问题暂不阻塞后续替换自己的 CPU，后续若要修正，优先核对老师原配 `D_mem.coe` 与 `SSeg7.edf` 版本。
+当前自研 CPU 板级基线已经能运行参考 IO 程序：跑马灯、0~F 显示、寄存器递增等功能符合要求。矩形/图形变化模式存在遗留差异：`SW[0]=0` 文本模式能显示 `D_mem.coe` 中 `0x60` 起始的图形表数据，例如 `557EF7E0`，但 `SW[0]=1` 图形模式的实际图案与参考矩形效果不一致。该问题暂不阻塞单周期 CPU 下板基线，后续若要修正，优先核对老师原配 `D_mem.coe` 与 `SSeg7.edf` 版本。
 
-当前板级代码的端口连接已通过 Icarus 黑盒接口检查。此检查只能发现模块名、端口名和位宽错误，不能仿真 EDF 内部功能，也不能代替 Vivado 综合。老师 EDF 外壳的实板结果只说明外围系统基线可用，不代表 `rtl/` 中自己的 CPU 已经下板。
+当前板级代码的端口连接已通过 Icarus 黑盒接口检查。此检查只能发现模块名、端口名和位宽错误，不能仿真 EDF 内部功能，也不能代替 Vivado 综合。自研 CPU 已完成一次实板 IO 演示验证；若老师要求 Test-37 专用 COE 下板，还需要单独生成并导入 Test-37 对应 COE。
 
 所有命令默认在项目根目录 `SCPU_SOC` 中执行。
 
@@ -209,17 +209,18 @@ edf/SSeg7.edf
 5. 在 Hardware Manager 中 **Open Target → Auto Connect → Program Device**。
 6. 先复位，再用 `SW[2]=1` 慢速观察 PC/指令变化；确认基本运行后切换到 `SW[2]=0`。
 
-当前顶层没有独立的 PASS 灯或自动停机逻辑。`I_mem.coe`/`D_mem.coe` 当前是老师板级 IO 演示程序和数据，不是 Icarus 仿真使用的 `sim/data/Test_37_Instr8.dat`。因此本阶段的实板结果用于确认老师 EDF 外围系统可运行；自己的 CPU 是否完成 37 条指令下板，需要后续替换 `edf/SCPU.edf` 后重新验证。
+当前顶层没有独立的 PASS 灯或自动停机逻辑。`I_mem.coe`/`D_mem.coe` 当前是老师板级 IO 演示程序和数据，不是 Icarus 仿真使用的 `sim/data/Test_37_Instr8.dat`。因此本阶段的实板结果用于确认 CPU 与板级 IO 外围可运行；课程 Test-37 的指令正确性仍以 Icarus 自检为主要证据。如需 Test-37 实板验收，应另行导入 Test-37 对应 COE。
 
-已完成的老师 EDF 外壳实板观察：
+已完成的实板观察：
 
 - Vivado bitstream 生成成功，Program Device 成功。
-- 使用 `edf/SCPU.edf`、`I_mem.coe`、`D_mem.coe` 时，跑马灯、0~F 数据显示、寄存器递增等参考功能符合要求。
+- 使用老师 `edf/SCPU.edf`、`I_mem.coe`、`D_mem.coe` 时，跑马灯、0~F 数据显示、寄存器递增等参考功能符合要求。
+- 替换为自己的 `rtl/SCPU.v` 后，重新生成 bitstream 并 Program Device，参考 IO 测试现象仍符合要求。
 - 矩形/图形变化模式遗留：`SW[4:3]=11` 且 `SW[7:5]=000` 时，`SW[0]=0` 能观察到 `D_mem.coe` 中 `0x60` 起的图形表数值，例如 `557EF7E0`；`SW[0]=1` 图形模式实际图案与参考矩形不一致。暂不改 CPU 或顶层数据通路，后续优先确认 `D_mem.coe` 与 `SSeg7.edf` 是否为同一版本。
 
 ### 7.6 后续替换为自己的 CPU
 
-老师 EDF 外围系统已经完成一次实板基线验证，下一步可以开始替换 CPU：禁用 `edf/SCPU.edf`，加入自己的 CPU RTL，并使顶层接口与 `edf/SCPU.v` 中的 `SCPU` 接口一致。外围的 MIO、RAM 控制、数码管和计数器保持不变。这不是两个完全独立的工程，而是同一个板级外壳下的两个 CPU 实现阶段。
+老师 EDF 外围系统和自研单周期 CPU 都已经完成一次实板基线验证。后续继续保持同一个板级外壳：外围的 MIO、RAM 控制、数码管和计数器保持不变，CPU 实现可以在老师 `SCPU.edf`、自研单周期 CPU、后续流水线 CPU 之间替换。
 
 当前 `feature/own-scpu-board` 分支已经做了最小兼容：
 
