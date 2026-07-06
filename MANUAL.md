@@ -33,11 +33,69 @@ iverilog -g2012 -Wall -s sccomp_tb -o build/simv -f files.f
 
 预期结果：命令退出且没有 error。当前基线下也不应出现 warning。
 
-`files.f` 供原单周期 Icarus 仿真使用，`board_files.f` 供完整板级接口检查使用。当前 slang-server 通过 `.slang/server.json` 的 `build` 字段使用不含 `top.v` 的 `board_deps.f`，由服务端只加入一次当前打开的顶层，以规避 1.28.1 WASM 的重复/孤立分析问题。不要再在 `flags` 中写 `-f`。这些 filelist 分开也能避免自己的 `rtl/SCPU.v` 与老师同名但接口不同的 `edf/SCPU.v` 冲突。
+`files.f` 供原单周期 Icarus 仿真使用，`board_own_files.f` 供自研 CPU 替换老师 SCPU 后的完整板级接口检查使用。当前 VS Code/mshr-h Verilog 插件也通过 `.slang/server.json` 使用 `board_own_files.f`，并配合精确 `indexGlobs` 建立跨文件跳转索引。
+
+当前确认可用的 slang-server 方案是：
+
+```json
+{
+  "flags": "-f board_own_files.f -Wno-duplicate-definition -Wno-unused-port -Wno-undriven-port -Wno-unused-but-set-net",
+  "indexGlobs": [
+    "board/*.v",
+    "rtl/*.v",
+    "rtl/*.vh",
+    "IO/*.v",
+    "editor/*.v",
+    "edf/MIO_BUS.V",
+    "edf/dm_controller.v",
+    "edf/SPIO.v",
+    "edf/Multi_8CH32.v",
+    "edf/SSeg7.v",
+    "sim/*.v"
+  ],
+  "build": "board_own_files.f"
+}
+```
+
+`indexGlobs` 是旧字段，但 native `slang-server 0.2.7` 仍支持，且当前项目实测最稳定。使用它的原因是：
+
+- `edf/MIO_BUS.V` 是大写 `.V`，普通目录索引容易漏掉。
+- 不能直接索引整个 `edf/` 目录，否则可能同时看到老师 `edf/SCPU.v` 和自研 `rtl/SCPU.v`，造成同名模块混乱。
+- `flags` 中必须包含 `-f board_own_files.f`，否则打开 `board/top.v` 时可能能消除部分红线但无法稳定 Go to Definition。
 
 自研 CPU 替换老师 `SCPU.edf` 的本地端口检查使用 `board_own_files.f`。它用 `rtl/SCPU.v` 及其依赖替代 `edf/SCPU.v`，其余外围仍使用老师 EDF stub。
 
-若 Problems 又出现整页 `unknown module` 或 `duplicate definition of top`，执行 **Verilog: Set slang-server Build File** 并选择 `board_deps.f`，再执行 **Verilog: Restart slang-server**。新版插件的会话级 Build File 会覆盖 JSON 中的默认值，因此不能选择 `board_files.f`。
+若重启 VS Code 后 Problems 又出现整页 `unknown module`，或 Cmd/F12 跳转一直 Loading，按以下顺序恢复：
+
+1. 确认 VS Code 打开的根目录是项目根目录 `SCPU_SOC`，不是 `board/` 或上一级 `Documents/`。
+2. 确认安装并启用 native slang-server：
+
+```bash
+~/.local/bin/slang-server --version
+```
+
+预期类似：
+
+```text
+slang-server version 0.2.7+50b2661
+```
+
+3. VS Code User Settings JSON 中应有：
+
+```json
+{
+  "verilog.slangServer.enabled": true,
+  "verilog.slangServer.runtime": "native",
+  "verilog.slangServer.path": "/Users/tonyyin/.local/bin/slang-server"
+}
+```
+
+4. 执行 **Developer: Reload Window**。
+5. 执行 **Verilog: Restart slang-server**。
+6. 执行 **Verilog: Doctor**，确认 `runtime = native`、`state = running`、`build = board_own_files.f`。
+7. 在 `board/top.v` 中对 `SCPU`、`clk_div`、`MIO_BUS` 右键 Go to Definition。当前已验证应分别跳到 `rtl/SCPU.v`、`IO/clk_div.v`、`edf/MIO_BUS.V`。
+
+如果 Doctor 显示还在使用 WASM，或 `build` 不是 `board_own_files.f`，优先修正 native runtime 和 `.slang/server.json`，不要退回旧的 `board_own_deps.f` 方案。
 
 ## 4. 运行回归测试
 
@@ -156,7 +214,7 @@ edf/SSeg7.edf
 
 `edf/*.v` 是网表接口 stub，主要供编辑器和接口检查使用。若 Vivado 已能从 EDF 正确识别端口，不必再把 stub 加入综合；不要添加 `rtl/SCPU.v`，否则会与老师的 `SCPU.edf` 重名。也不要添加 `sim/sccomp_tb.v`。
 
-`board/ip_stubs.v` 只用于 VS Code/slang 和 Icarus 的端口检查，不得加入 Vivado Design Sources；Vivado 使用 IP Catalog 实际生成的 `ROM_D`、`RAM_B`。
+`editor/ip_stubs.v` 只用于 VS Code/slang 和 Icarus 的端口检查，不得加入 Vivado Design Sources；Vivado 使用 IP Catalog 实际生成的 `ROM_D`、`RAM_B`。
 
 5. 在 Sources 中右键 `top`，选择 **Set as Top**。
 

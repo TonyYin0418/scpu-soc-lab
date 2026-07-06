@@ -19,4 +19,3 @@
 ./IO/Enter.v
 ./IO/clk_div.v
 ./IO/Counter_3_IO.v
-./board/top.v

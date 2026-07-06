@@ -82,6 +82,7 @@
 ```text
 SCPU_SOC/
 ├── board/               # 板级顶层；Vivado 工程入口为 top
+├── editor/              # 仅供编辑器/Icarus 检查使用的 IP stub
 ├── IO/                  # 老师提供的时钟、输入和计数器 RTL
 ├── edf/                 # 老师提供的 SCPU/外设网表及接口 stub
 ├── asm2coe/             # RISC-V 汇编到 COE 的转换工具
@@ -96,7 +97,8 @@ SCPU_SOC/
 ├── files.f              # 原单周期 Icarus 仿真 filelist
 ├── board_files.f        # 完整板级接口检查 filelist
 ├── board_own_files.f    # 自研 SCPU 替换老师 SCPU 后的板级接口检查 filelist
-├── board_deps.f         # slang 依赖 filelist（不重复列出当前顶层）
+├── board_deps.f         # 老师 SCPU.edf 阶段的 slang 依赖 filelist
+├── board_own_deps.f     # 当前 VS Code/slang 依赖 filelist（不列 top，避免 duplicate）
 └── .slang/server.json   # workspace 级 slang-server 配置
 ```
 
@@ -175,7 +177,8 @@ gtkwave build/sccomp_tb.vcd
 ## 当前阶段：老师 EDF 板级系统
 
 - `board/top.v` 是当前 Vivado 顶层，连接老师的 `SCPU.edf`、`MIO_BUS.edf`、`dm_controller.edf`、`SPIO.edf`、`Multi_8CH32.edf`、`SSeg7.edf` 以及 `IO/` 中的 RTL。
-- slang-server 当前仅通过 `build: board_deps.f` 加载板级依赖；当前打开的 `top.v` 由服务端加入一次，且 `board/IO/edf` 不再被 `index.dirs` 重复扫描，以规避 1.28.1 WASM 重复/孤立分析顶层的问题。完整板级 Icarus 检查使用 `board_files.f`，原单周期仿真仍使用 `files.f`。
+- VS Code Verilog 跳转当前使用 mshr-h Verilog-HDL 插件 + native `slang-server 0.2.7`。`.slang/server.json` 使用 `flags: -f board_own_files.f` 和精确 `indexGlobs`，已验证 `board/top.v` 中 `Enter`、`clk_div`、`ROM_D`、`SCPU`、`MIO_BUS`、`dm_controller`、`RAM_B`、`SPIO`、`Counter_x`、`Multi_8CH32`、`SSeg7` 均可 Go to Definition。不要退回旧的 `board_own_deps.f + index.dirs` 方案；该方案曾出现重启 VS Code 后 No Definitions。
+- 当前 `indexGlobs` 显式列出 `edf/MIO_BUS.V`，原因是该文件扩展名为大写 `.V`；普通目录索引可能漏掉它。不要直接索引整个 `edf/` 目录，否则容易同时索引老师 `edf/SCPU.v` 和自研 `rtl/SCPU.v`，导致同名模块混乱。
 - `ROM_D` 使用 Distributed Memory Generator，`RAM_B` 使用 Block Memory Generator；两者必须在 Vivado 中生成，仓库当前只有连接接口，没有伪造可综合实现。
 - `SCPU` 与 CPU 外围系统必须保持边界清晰。第一步只验证老师 EDF 能在外围系统中运行；替换自己的 CPU 时，接口需匹配 `edf/SCPU.v`，不要修改外围网表。
 - 当前老师 `clk_div.v` 在 100 MHz 输入下令 `SW[2]=0` 选择 `clkdiv[3]`（6.25 MHz），`SW[2]=1` 选择 `clkdiv[24]`（约 2.98 Hz）。`clkdiv[24]` 每 `2^24` 个输入周期翻转一次，因此完整时钟周期是 `2^25` 分频。

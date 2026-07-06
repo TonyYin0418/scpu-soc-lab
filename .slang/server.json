@@ -1,10 +1,17 @@
 {
-  "flags": "-Wno-unused-port -Wno-undriven-port -Wno-unused-but-set-net",
-  "index": [
-    {
-      "dirs": ["rtl", "sim"],
-      "excludeDirs": ["build", "obj", "work", ".git", "node_modules"]
-    }
+  "flags": "-f board_own_files.f -Wno-duplicate-definition -Wno-unused-port -Wno-undriven-port -Wno-unused-but-set-net",
+  "indexGlobs": [
+    "board/*.v",
+    "rtl/*.v",
+    "rtl/*.vh",
+    "IO/*.v",
+    "editor/*.v",
+    "edf/MIO_BUS.V",
+    "edf/dm_controller.v",
+    "edf/SPIO.v",
+    "edf/Multi_8CH32.v",
+    "edf/SSeg7.v",
+    "sim/*.v"
   ],
-  "build": "board_deps.f"
+  "build": "board_own_files.f"
 }

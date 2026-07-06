@@ -2,7 +2,7 @@
 +incdir+./edf
 +incdir+./board
 
-./board/ip_stubs.v
+./editor/ip_stubs.v
 ./edf/SCPU.v
 ./edf/MIO_BUS.V
 ./edf/dm_controller.v
