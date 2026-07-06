@@ -89,7 +89,8 @@ SCPU_SOC/
 ├── docs/                # 课程 DOCX/PDF 规格和板级原理图
 ├── build/               # 仿真可执行文件、结果和波形等生成物
 ├── MANUAL.md            # 人工仿真与未来 Vivado 下板操作指南
-├── files.f              # Icarus/slang 共用 filelist
+├── files.f              # 原单周期 Icarus 仿真 filelist
+├── board_files.f        # slang/板级接口检查 filelist
 └── .slang/server.json   # workspace 级 slang-server 配置
 ```
 
@@ -168,6 +169,7 @@ gtkwave build/sccomp_tb.vcd
 ## 当前阶段：老师 EDF 板级系统
 
 - `board/top.v` 是当前 Vivado 顶层，连接老师的 `SCPU.edf`、`MIO_BUS.edf`、`dm_controller.edf`、`SPIO.edf`、`Multi_8CH32.edf`、`SSeg7.edf` 以及 `IO/` 中的 RTL。
+- slang-server 当前使用 `board_files.f`，避免把同名但接口不同的 `rtl/SCPU.v` 与老师 `edf/SCPU.v` 放入同一个编译单元。原单周期 Icarus 仿真仍使用 `files.f`。
 - `ROM_D` 使用 Distributed Memory Generator，`RAM_B` 使用 Block Memory Generator；两者必须在 Vivado 中生成，仓库当前只有连接接口，没有伪造可综合实现。
 - `SCPU` 与 CPU 外围系统必须保持边界清晰。第一步只验证老师 EDF 能在外围系统中运行；替换自己的 CPU 时，接口需匹配 `edf/SCPU.v`，不要修改外围网表。
 - 当前老师 `clk_div.v` 在 100 MHz 输入下令 `SW[2]=0` 选择 `clkdiv[3]`（6.25 MHz），`SW[2]=1` 选择 `clkdiv[24]`（约 2.98 Hz）。`clkdiv[24]` 每 `2^24` 个输入周期翻转一次，因此完整时钟周期是 `2^25` 分频。

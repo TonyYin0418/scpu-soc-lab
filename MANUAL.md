@@ -31,7 +31,7 @@ iverilog -g2012 -Wall -s sccomp_tb -o build/simv -f files.f
 
 预期结果：命令退出且没有 error。当前基线下也不应出现 warning。
 
-`files.f` 同时供 Icarus Verilog 和 slang-server 使用，不要在命令中手工维护另一份 RTL 文件列表。
+`files.f` 供原单周期 Icarus 仿真使用；当前 slang-server 为检查板级顶层而使用 `board_files.f`。两个 filelist 分开是为了避免自己的 `rtl/SCPU.v` 与老师同名但接口不同的 `edf/SCPU.v` 冲突。
 
 ## 4. 运行回归测试
 
@@ -149,6 +149,8 @@ edf/SSeg7.edf
 ```
 
 `edf/*.v` 是网表接口 stub，主要供编辑器和接口检查使用。若 Vivado 已能从 EDF 正确识别端口，不必再把 stub 加入综合；不要添加 `rtl/SCPU.v`，否则会与老师的 `SCPU.edf` 重名。也不要添加 `sim/sccomp_tb.v`。
+
+`board/ip_stubs.v` 只用于 VS Code/slang 和 Icarus 的端口检查，不得加入 Vivado Design Sources；Vivado 使用 IP Catalog 实际生成的 `ROM_D`、`RAM_B`。
 
 5. 在 Sources 中右键 `top`，选择 **Set as Top**。
 
