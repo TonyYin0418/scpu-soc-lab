@@ -22,3 +22,8 @@ build/*
 *.dcp
 *.bit
 
+# asm2coe 中间产物；最终需要使用的 COE 可按里程碑单独提交
+asm2coe/build/
+asm2coe/*.bin
+asm2coe/*.asm
+asm2coe/mcode.txt

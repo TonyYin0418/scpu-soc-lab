@@ -4,7 +4,9 @@
 
 ## 1. 当前状态
 
-目前已经完成 37 条指令单周期 CPU 的 RTL 与自检仿真，但尚未完成 FPGA 板级顶层、时钟分频、ROM 固化、显示和实板验证。因此当前可执行的是 Icarus Verilog 仿真流程，Vivado 下板流程仅列出后续框架，不能据此宣称已经完成下板。
+目前已经完成 37 条指令单周期 CPU 的 RTL 与自检仿真，也已经按老师原理图建立 `board/top.v`。板级顶层当前先连接老师的 `edf/SCPU.edf` 和外围 EDF，尚未经过 Vivado 综合、实现或实板验证，不能据此宣称已经完成下板。
+
+当前板级代码的端口连接已通过 Icarus 黑盒接口检查。此检查只能发现模块名、端口名和位宽错误，不能仿真 EDF 内部功能，也不能代替 Vivado 综合。
 
 所有命令默认在项目根目录 `SCPU_SOC` 中执行。
 
@@ -122,36 +124,99 @@ vvp -n build/simv +MEM_FILE=sim/data/your_program.dat +WORDS=71
 
 仅替换机器码不会自动产生正确答案。修改测试程序后，还需要在 testbench 中加入独立推导的寄存器和内存期望值。
 
-## 7. Windows Vivado 下板流程（待板级代码完成后维护）
+## 7. Windows Vivado：老师 EDF 板级基线
 
-当前还不能直接执行完整下板。后续拿到课程 `CLK_DIV.v`、确认开发板型号并完成板级顶层后，应把本节更新为逐步可执行的正式流程。
+当前 `constraints/icf.xdc` 已匹配本顶层端口并按 Nexys A7-100T 管脚补齐。老师的 EDF 由 Vivado 2018.1 为 `xc7a100tcsg324-1` 生成；优先使用相同 Vivado 版本和器件，除非老师随后给出的工程明确指定其他型号。
 
-计划中的人工步骤如下：
+### 7.1 复制并创建工程
 
-1. 将整个项目目录复制或通过 Git 克隆到 Windows，路径尽量只使用英文、数字和下划线。
-2. 安装并启动课程指定版本的 Vivado。
-3. 创建 RTL Project，选择准确的开发板或 FPGA part；在型号未确认前不要猜测。
-4. 添加可综合 RTL、板级顶层和课程提供并修改后的 `CLK_DIV.v`，不要把 `sim/sccomp_tb.v` 加入综合源。
-5. 添加 `constraints/icf.xdc`，并检查顶层端口与 XDC 中 `clk`、`rstn`、`sw_i`、`led_o`、`disp_seg_o`、`disp_an_o` 完全一致。
-6. 将 Test-37 固化到指令 ROM。若课程要求 COE/IP，则添加正确的 COE；若允许推断 ROM，则添加 `$readmemh` 使用的初始化文件。
-7. 将板载输入时钟按真实 100 MHz、10 ns 周期约束。CPU 全速目标为 50 MHz/25 MHz，慢速观察模式为 `2^24` 分频约 5.96 Hz。
-8. 设置正确的板级顶层，依次执行 Run Synthesis、Run Implementation、Open Implemented Design 和 Report Timing Summary。
-9. 只有在无关键 DRC、时序满足要求后执行 Generate Bitstream。
-10. 连接开发板，在 Hardware Manager 中 Open Target、Program Device，按规定操作复位、运行/慢速模式和寄存器选择开关。
-11. 记录 LED/数码管显示、PASS 停机状态、实际 CPU 频率和测试程序结果。
+1. 将整个项目复制到 Windows，路径只使用英文、数字和下划线，例如 `D:\\FPGA\\SCPU_SOC`。
+2. 在 Vivado 2018.1 中选择 **Create Project → RTL Project**，不要勾选立即添加所有目录。
+3. 选择器件 `xc7a100tcsg324-1`。
+4. 添加以下 Design Sources：
 
-板级代码完成后，本节必须补充以下具体信息：
+```text
+board/top.v
+IO/Enter.v
+IO/clk_div.v
+IO/Counter_3_IO.v
+edf/SCPU.edf
+edf/MIO_BUS.edf
+edf/dm_controller.edf
+edf/SPIO.edf
+edf/Multi_8CH32.edf
+edf/SSeg7.edf
+```
 
-- Windows 上使用的 Vivado 版本
-- 开发板与 FPGA part
-- 工程创建方式或 Tcl 命令
-- 需要添加的确切源文件
-- ROM/COE 文件及配置方式
-- 顶层模块名
-- 开关、按键、LED 和数码管映射
-- 综合、时序和下载时的预期结果
+`edf/*.v` 是网表接口 stub，主要供编辑器和接口检查使用。若 Vivado 已能从 EDF 正确识别端口，不必再把 stub 加入综合；不要添加 `rtl/SCPU.v`，否则会与老师的 `SCPU.edf` 重名。也不要添加 `sim/sccomp_tb.v`。
 
-## 8. 常见问题
+5. 在 Sources 中右键 `top`，选择 **Set as Top**。
+
+### 7.2 创建 ROM_D
+
+在 IP Catalog 中选择 **Distributed Memory Generator**：
+
+- Component Name：`ROM_D`
+- Memory Type：ROM
+- Data Width：32
+- Depth：1024，对应地址端口 `a[9:0]`
+- 输出端口：异步 `spo[31:0]`，不要增加输出寄存器
+- 初始化文件：根目录 `I_mem.coe`
+
+生成后检查实例端口恰好是 `a[9:0]` 和 `spo[31:0]`。如果 Vivado 生成了不同端口，不要修改 `top.v` 去迁就错误的 IP 配置，应返回 IP 设置修正。
+
+### 7.3 创建 RAM_B
+
+在 IP Catalog 中选择 **Block Memory Generator**：
+
+- Component Name：`RAM_B`
+- Interface Type：Native
+- Memory Type：Single Port RAM
+- Write Width / Read Width：32
+- Depth：1024，对应 `addra[9:0]`
+- 启用 Byte Write Enable，得到 `wea[3:0]`
+- 不增加额外输出寄存器
+- 初始化文件：根目录 `D_mem.coe`
+
+生成后端口应为 `clka`、`wea[3:0]`、`addra[9:0]`、`dina[31:0]`、`douta[31:0]`。RAM 的最终读写模式若老师提供的 PPT/IP 截图有明确要求，以老师配置为准。
+
+### 7.4 时钟和显示操作
+
+板载输入 `clk` 是 100 MHz。当前 `IO/clk_div.v` 的真实行为是：
+
+- `SW[2]=0`：CPU 使用 `clkdiv[3]`，频率 6.25 MHz。
+- `SW[2]=1`：CPU 使用 `clkdiv[24]`，频率约 2.98 Hz；该位每 `2^24` 个输入周期翻转一次，完整周期为 `2^25` 分频。
+- `SW[7:5]`：选择数码管显示源，依次为外设输入、`PC[31:2]`、当前指令、计数器、CPU 地址、CPU 写数据、CPU 读数据、PC。
+
+当前实现是自动慢速运行，不是按钮按一下执行一步。按钮单步等老师基线成功后再增加。
+
+### 7.5 XDC、综合与下载
+
+1. 将 `constraints/icf.xdc` 添加为 Constraints Source。
+2. 检查 `clk` 的周期约束为 10 ns；不要把约束改成 CPU 分频后的周期。
+3. 依次执行 **Run Synthesis → Run Implementation → Report Timing Summary**。
+4. 确认没有 unconstrained top-level port、unresolved black box、关键 DRC 或负的 setup slack 后，再执行 **Generate Bitstream**。
+5. 在 Hardware Manager 中 **Open Target → Auto Connect → Program Device**。
+6. 先复位，再用 `SW[2]=1` 慢速观察 PC/指令变化；确认基本运行后切换到 `SW[2]=0`。
+
+当前顶层没有独立的 PASS 灯或自动停机逻辑。Test-37 是否下板通过，需要根据测试程序约定的最终 PC、寄存器/内存或外设显示判定；拿到老师对 `I_mem.coe`/`D_mem.coe` 的验收说明后再固定判断标准。
+
+### 7.6 后续替换为自己的 CPU
+
+老师 EDF 外围系统成功下板后，才进行替换：禁用 `edf/SCPU.edf`，加入自己的 CPU RTL，并使顶层接口与 `edf/SCPU.v` 中的 `SCPU` 接口一致。外围的 MIO、RAM 控制、数码管和计数器保持不变。这不是两个完全独立的工程，而是同一个板级外壳下的两个 CPU 实现阶段。
+
+## 8. 从汇编生成 COE
+
+老师提供的工具位于 `asm2coe/`，需要 RISC-V GNU 工具链。Linux/WSL 中执行：
+
+```bash
+cd asm2coe
+make
+```
+
+默认由 `Test_37_Instr8.S` 生成 `Test_37_Instr8.coe`、反汇编和机器码。生成后先检查反汇编，再在 Vivado 的 `ROM_D` 中选择该 COE。不要用新的测试 COE 覆盖现有 `I_mem.coe`，除非已经确认两者用途和预期结果。
+
+## 9. 常见问题
 
 ### 找不到 include 文件
 
@@ -168,4 +233,3 @@ vvp -n build/simv +MEM_FILE=sim/data/your_program.dat +WORDS=71
 ### GTKWave 显示时间单位异常
 
 testbench 已设置 `` `timescale 1ns/1ps``。重新编译和运行后再打开最新的 `build/sccomp_tb.vcd`。
-

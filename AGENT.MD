@@ -12,7 +12,7 @@
 
 - 实现课程规定的 37 条 RV32I 指令。
 - Test-8、Test-37 和 AUIPC 补测全部通过。
-- 完成指令 ROM 初始化、100 MHz 到 50 MHz/25 MHz 全速模式及 `2^24` 分频慢速单步模式的时钟方案、复位、模式选择、寄存器选择和显示。
+- 完成指令 ROM 初始化、老师板级外设系统、复位、快慢时钟选择和数码管/LED 显示；后续再根据性能要求优化全速频率。
 - Vivado 综合、实现和时序检查通过，生成 bitstream。
 - 在开发板上运行测试程序并能观察 PASS 或规定的最终结果。
 
@@ -58,8 +58,10 @@
 ## 当前进度
 
 - 已完成：37 条指令单周期 RTL、中文注释、Test-8、课程 Test-37、AUIPC 补测和 Icarus 自检。
-- 正在推进：60–70 分阶段的 FPGA 板级适配。
-- 尚未完成：ROM 上板初始化、基于课程 `CLK_DIV.v` 的 50 MHz/25 MHz 全速时钟与 `2^24` 分频单步时钟、模式选择、数码管/LED 显示、PASS 停机、Vivado 综合实现和实板验证。
+- 已完成板级接口基线：整理老师提供的 EDF/IO/汇编工具，按 `docs/schematic.pdf` 创建 `board/top.v`，并用黑盒接口完成 Icarus 端口级编译检查。
+- 当前下板基线先使用老师提供的 `edf/SCPU.edf`，不接入 `rtl/` 中自己的 CPU；待外围系统成功下板后，再替换为自己的 CPU。
+- 已校正 `constraints/icf.xdc`：补齐 5 个按钮，删除临时开关时钟网约束，并将板载 100 MHz 时钟周期修正为 10 ns。
+- 尚未完成：在 Vivado 中生成 `ROM_D`/`RAM_B`、导入 COE、综合实现、生成 bitstream 和实板验证。
 - 尚未开始：冒险流水线、应用、中断/异常及 90–100 分扩展。
 
 支持的指令如下：
@@ -75,12 +77,16 @@
 
 ```text
 SCPU_SOC/
+├── board/               # 板级顶层；Vivado 工程入口为 top
+├── IO/                  # 老师提供的时钟、输入和计数器 RTL
+├── edf/                 # 老师提供的 SCPU/外设网表及接口 stub
+├── asm2coe/             # RISC-V 汇编到 COE 的转换工具
 ├── rtl/                 # 可综合 Verilog RTL
 ├── sim/
 │   ├── sccomp_tb.v      # 自检 testbench
 │   └── data/            # 汇编、机器码及 ROM 初始化资料
-├── constraints/         # FPGA XDC 约束
-├── docs/                # 课程 DOCX/PDF 规格资料
+├── constraints/         # Nexys A7-100T 板级 XDC 约束
+├── docs/                # 课程 DOCX/PDF 规格和板级原理图
 ├── build/               # 仿真可执行文件、结果和波形等生成物
 ├── MANUAL.md            # 人工仿真与未来 Vivado 下板操作指南
 ├── files.f              # Icarus/slang 共用 filelist
@@ -159,15 +165,13 @@ gtkwave build/sccomp_tb.vcd
 - Test-37 有 71 条机器指令；默认完成点为 `PC=0x110` 且 `x10=0x7b2`。
 - 修改测试程序后，必须重新独立推导预期寄存器和内存结果，不能用被测 RTL 生成标准答案。
 
-## 当前阶段：FPGA 上板状态
+## 当前阶段：老师 EDF 板级系统
 
-当前 RTL 和仿真已通过，但项目尚未达到直接生成 bitstream 的状态。上板前还需要：
+- `board/top.v` 是当前 Vivado 顶层，连接老师的 `SCPU.edf`、`MIO_BUS.edf`、`dm_controller.edf`、`SPIO.edf`、`Multi_8CH32.edf`、`SSeg7.edf` 以及 `IO/` 中的 RTL。
+- `ROM_D` 使用 Distributed Memory Generator，`RAM_B` 使用 Block Memory Generator；两者必须在 Vivado 中生成，仓库当前只有连接接口，没有伪造可综合实现。
+- `SCPU` 与 CPU 外围系统必须保持边界清晰。第一步只验证老师 EDF 能在外围系统中运行；替换自己的 CPU 时，接口需匹配 `edf/SCPU.v`，不要修改外围网表。
+- 当前老师 `clk_div.v` 在 100 MHz 输入下令 `SW[2]=0` 选择 `clkdiv[3]`（6.25 MHz），`SW[2]=1` 选择 `clkdiv[24]`（约 2.98 Hz）。`clkdiv[24]` 每 `2^24` 个输入周期翻转一次，因此完整时钟周期是 `2^25` 分频。
+- `SW[7:5]` 选择数码管观察内容，`SW[0]` 传给数码管显示模块；管脚由 `constraints/icf.xdc` 约束。
+- 计时中断、按钮单步和 50/25 MHz 优化暂不属于本次基线，不得在未验证老师工程前加入。
 
-1. 确认开发板及 FPGA 型号，当前 XDC 引脚布局看起来属于 Nexys A7 系列。
-2. 等待课程提供 `CLK_DIV.v`，在理解其分频方式和复位行为后修改并接入。板载输入为 100 MHz；全速 CPU 预计支持 50 MHz 或 25 MHz，慢速单步/观察模式采用 `2^24` 分频，即约 5.96 Hz（约每 167.77 ms 前进一步）。集成时必须确认代码输出的是计数器位、周期脉冲还是每次溢出翻转的时钟，避免实际频率再多除以 2。XDC 中的输入时钟仍必须按真实的 100 MHz（10 ns 周期）约束，不能只修改 XDC 周期来“降频”。
-3. 创建与 `sw_i`、`led_o`、`disp_seg_o`、`disp_an_o` 匹配的板级顶层。
-4. 增加按键去抖、单步脉冲和运行/单步模式控制，禁止直接用机械按键作为时钟。
-5. 将 Test-37 固化到可综合指令 ROM，并决定使用推断 ROM 还是课程要求的 COE/IP。
-6. 增加八位数码管扫描显示和 PASS/停机逻辑，再完成综合、实现和时序检查。
-
-不要在开发板型号、时钟方案和 ROM 方案未确认前擅自修改引脚约束或生成板级顶层。
+当前下一步必须在 Windows Vivado 2018.1 中生成两个存储器 IP，并用 `constraints/icf.xdc` 完成实际综合/实现。macOS 上的 Icarus 端口检查不能验证 EDF 网表、IP 或时序。

@@ -1,0 +1,4 @@
+# Vivado EDIF 网表由老师提供，按原始字节保存，避免 Git 改写换行。
+*.edf binary
+*.pdf binary
+*.docx binary

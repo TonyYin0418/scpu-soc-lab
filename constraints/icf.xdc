@@ -1,8 +1,14 @@
-# Clock signal
+# Nexys A7-100T clock and reset
 set_property -dict { PACKAGE_PIN E3    IOSTANDARD LVCMOS33 } [get_ports { clk }]; #IO_L12P_T1_MRCC_35 Sch=clk100mhz
-create_clock -add -name sys_clk_pin -period 100.00 -waveform {0 50} [get_ports {clk}];
+create_clock -add -name sys_clk_pin -period 10.00 -waveform {0 5} [get_ports {clk}];
 set_property -dict { PACKAGE_PIN C12   IOSTANDARD LVCMOS33 } [get_ports { rstn }]; #IO_L3P_T0_DQS_AD1P_15 Sch=cpu_resetn
-set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets sw_i_IBUF[15]];#add for temp
+
+# Push buttons: center, up, left, right, down
+set_property -dict { PACKAGE_PIN N17   IOSTANDARD LVCMOS33 } [get_ports { btn_i[0] }]; #Sch=btnc
+set_property -dict { PACKAGE_PIN M18   IOSTANDARD LVCMOS33 } [get_ports { btn_i[1] }]; #Sch=btnu
+set_property -dict { PACKAGE_PIN P17   IOSTANDARD LVCMOS33 } [get_ports { btn_i[2] }]; #Sch=btnl
+set_property -dict { PACKAGE_PIN M17   IOSTANDARD LVCMOS33 } [get_ports { btn_i[3] }]; #Sch=btnr
+set_property -dict { PACKAGE_PIN P18   IOSTANDARD LVCMOS33 } [get_ports { btn_i[4] }]; #Sch=btnd
 # 7seg
 set_property -dict { PACKAGE_PIN T10   IOSTANDARD LVCMOS33 } [get_ports { disp_seg_o[0] }]; #IO_L24N_T3_A00_D16_14 Sch=ca
 set_property -dict { PACKAGE_PIN R10   IOSTANDARD LVCMOS33 } [get_ports { disp_seg_o[1] }]; #IO_25_14 Sch=cb
