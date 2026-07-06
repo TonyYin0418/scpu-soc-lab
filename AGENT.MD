@@ -59,9 +59,11 @@
 
 - 已完成：37 条指令单周期 RTL、中文注释、Test-8、课程 Test-37、AUIPC 补测和 Icarus 自检。
 - 已完成板级接口基线：整理老师提供的 EDF/IO/汇编工具，按 `docs/schematic.pdf` 创建 `board/top.v`，并用黑盒接口完成 Icarus 端口级编译检查。
-- 当前下板基线先使用老师提供的 `edf/SCPU.edf`，不接入 `rtl/` 中自己的 CPU；待外围系统成功下板后，再替换为自己的 CPU。
+- 已完成老师 EDF 板级外壳实板基线：在 Vivado 中使用老师提供的 `edf/SCPU.edf`、外围 EDF、`I_mem.coe` 和 `D_mem.coe` 生成 bitstream 并 Program Device，板上跑马灯、0~F 显示、寄存器递增等参考功能符合要求。
+- 当前下板基线仍使用老师提供的 `edf/SCPU.edf`，不接入 `rtl/` 中自己的 CPU；下一阶段才替换为自己的 CPU。
 - 已校正 `constraints/icf.xdc`：补齐 5 个按钮，删除临时开关时钟网约束，并将板载 100 MHz 时钟周期修正为 10 ns。
-- 尚未完成：在 Vivado 中生成 `ROM_D`/`RAM_B`、导入 COE、综合实现、生成 bitstream 和实板验证。
+- 遗留问题：`SW[4:3]=11` 的矩形/图形变化模式能在 `SW[0]=0` 文本模式下观察到 `D_mem.coe` 中 `0x60` 起始的图形表数据（如 `557EF7E0`），说明程序读数和显示通道基本有效；但 `SW[0]=1` 图形模式的实际图案与参考矩形效果不一致。该问题暂不阻塞老师 EDF 板级外壳基线，后续优先核对老师原配 `D_mem.coe` 与 `SSeg7.edf` 版本是否匹配。
+- 尚未完成：将自己的 `rtl/SCPU.v` 替换老师 `edf/SCPU.edf` 后综合、实现、生成 bitstream 和实板验证。
 - 尚未开始：冒险流水线、应用、中断/异常及 90–100 分扩展。
 
 支持的指令如下：
@@ -175,6 +177,9 @@ gtkwave build/sccomp_tb.vcd
 - `SCPU` 与 CPU 外围系统必须保持边界清晰。第一步只验证老师 EDF 能在外围系统中运行；替换自己的 CPU 时，接口需匹配 `edf/SCPU.v`，不要修改外围网表。
 - 当前老师 `clk_div.v` 在 100 MHz 输入下令 `SW[2]=0` 选择 `clkdiv[3]`（6.25 MHz），`SW[2]=1` 选择 `clkdiv[24]`（约 2.98 Hz）。`clkdiv[24]` 每 `2^24` 个输入周期翻转一次，因此完整时钟周期是 `2^25` 分频。
 - `SW[7:5]` 选择数码管观察内容，`SW[0]` 传给数码管显示模块；管脚由 `constraints/icf.xdc` 约束。
+- `I_mem.coe`/`D_mem.coe` 当前是老师板级 IO 演示程序和数据，不等同于 `sim/data/Test_37_Instr8.dat`。上板现象用于验证老师 EDF 外围系统，不能直接替代自己的 CPU 的 Test-37 下板验收。
+- 已完成一次实板验证：Vivado 生成 bitstream 并 Program Device 成功；使用老师 `SCPU.edf` 时，`SW[7:5]=000` 可观察程序输出，`SW[4:3]` 可切换跑马灯、0~F 数据显示、寄存器递增等模式。
+- 当前遗留：矩形/图形变化模式在 `SW[0]=0` 时能显示 `D_mem.coe` 图形表数值，在 `SW[0]=1` 图形模式下与参考图形不一致；后续若要修正，应优先核对 `D_mem.coe` 图形编码与 `SSeg7.edf` 版本，而不是修改 CPU 数据通路。
 - 计时中断、按钮单步和 50/25 MHz 优化暂不属于本次基线，不得在未验证老师工程前加入。
 
-当前下一步必须在 Windows Vivado 2018.1 中生成两个存储器 IP，并用 `constraints/icf.xdc` 完成实际综合/实现。macOS 上的 Icarus 端口检查不能验证 EDF 网表、IP 或时序。
+当前下一步是让自己的 `rtl/SCPU.v` 兼容 `edf/SCPU.v` 的板级接口，然后在不修改外围 EDF、ROM/RAM IP 和 XDC 的前提下替换老师 `SCPU.edf`。macOS 上的 Icarus 端口检查不能验证 EDF 网表、IP 或时序，最终仍必须在 Vivado 和开发板上确认。
