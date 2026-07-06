@@ -6,7 +6,7 @@ module clk_div(input clk,
 					output Clk_CPU
 					);
 
-// Clock divider-ʱ�ӷ�Ƶ��
+// Clock divider.
 
 
 	always @ (posedge clk or posedge rst) begin
