@@ -5,18 +5,22 @@
 module SCPU(
     input             clk,
     input             reset,
+    input             MIO_ready,
     input      [31:0] inst_in,
     input      [31:0] Data_in,
 
     output            mem_w,
-    output     [2:0]  DMType,
     output     [31:0] PC_out,
     output     [31:0] Addr_out,
     output     [31:0] Data_out,
-
-    input      [4:0]  reg_sel,
-    output     [31:0] reg_data
+    output     [2:0]  dm_ctrl,
+    output            CPU_MIO,
+    input             INT
 );
+
+    // 当前 37 条单周期基线暂不使用 MIO ready/中断。
+    // 保留端口是为了兼容老师板级 SCPU.edf 接口。
+    assign CPU_MIO = 1'b0;
 
     wire        RegWrite;
     wire [5:0]  EXTOp;
@@ -32,6 +36,7 @@ module SCPU(
     wire [31:0] RD1;
     wire [31:0] RD2;
     wire [31:0] alu_b;
+    wire [31:0] unused_debug_data;
     reg  [31:0] write_data;
 
     wire [6:0] Op     = inst_in[6:0];
@@ -67,7 +72,7 @@ module SCPU(
         .NPCOp(NPCOp),
         .ALUSrc(ALUSrc),
         .WDSel(WDSel),
-        .DMType(DMType)
+        .DMType(dm_ctrl)
     );
 
     PC U_PC(
@@ -104,10 +109,10 @@ module SCPU(
         .A2(rs2),
         .A3(rd),
         .WD(write_data),
-        .debug_addr(reg_sel),
+        .debug_addr(5'b0),
         .RD1(RD1),
         .RD2(RD2),
-        .debug_data(reg_data)
+        .debug_data(unused_debug_data)
     );
 
     alu U_alu(

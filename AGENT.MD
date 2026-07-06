@@ -63,6 +63,8 @@
 - 当前下板基线仍使用老师提供的 `edf/SCPU.edf`，不接入 `rtl/` 中自己的 CPU；下一阶段才替换为自己的 CPU。
 - 已校正 `constraints/icf.xdc`：补齐 5 个按钮，删除临时开关时钟网约束，并将板载 100 MHz 时钟周期修正为 10 ns。
 - 遗留问题：`SW[4:3]=11` 的矩形/图形变化模式能在 `SW[0]=0` 文本模式下观察到 `D_mem.coe` 中 `0x60` 起始的图形表数据（如 `557EF7E0`），说明程序读数和显示通道基本有效；但 `SW[0]=1` 图形模式的实际图案与参考矩形效果不一致。该问题暂不阻塞老师 EDF 板级外壳基线，后续优先核对老师原配 `D_mem.coe` 与 `SSeg7.edf` 版本是否匹配。
+- 已在 `feature/own-scpu-board` 分支完成自研单周期 CPU 的板级接口兼容：`rtl/SCPU.v` 端口对齐老师 `edf/SCPU.v`，`rtl/sccomp.v` 已适配新接口，并新增 `board_own_files.f` 用于 `board/top.v` + 自研 CPU 的 Icarus 端口级检查。
+- 当前兼容验证：Test-8、AUIPC 补测、课程 Test-37 均通过；`iverilog -g2012 -Wall -s top -o build/top_own_check -f board_own_files.f` 通过。
 - 尚未完成：将自己的 `rtl/SCPU.v` 替换老师 `edf/SCPU.edf` 后综合、实现、生成 bitstream 和实板验证。
 - 尚未开始：冒险流水线、应用、中断/异常及 90–100 分扩展。
 
@@ -93,6 +95,7 @@ SCPU_SOC/
 ├── MANUAL.md            # 人工仿真与未来 Vivado 下板操作指南
 ├── files.f              # 原单周期 Icarus 仿真 filelist
 ├── board_files.f        # 完整板级接口检查 filelist
+├── board_own_files.f    # 自研 SCPU 替换老师 SCPU 后的板级接口检查 filelist
 ├── board_deps.f         # slang 依赖 filelist（不重复列出当前顶层）
 └── .slang/server.json   # workspace 级 slang-server 配置
 ```
@@ -180,6 +183,7 @@ gtkwave build/sccomp_tb.vcd
 - `I_mem.coe`/`D_mem.coe` 当前是老师板级 IO 演示程序和数据，不等同于 `sim/data/Test_37_Instr8.dat`。上板现象用于验证老师 EDF 外围系统，不能直接替代自己的 CPU 的 Test-37 下板验收。
 - 已完成一次实板验证：Vivado 生成 bitstream 并 Program Device 成功；使用老师 `SCPU.edf` 时，`SW[7:5]=000` 可观察程序输出，`SW[4:3]` 可切换跑马灯、0~F 数据显示、寄存器递增等模式。
 - 当前遗留：矩形/图形变化模式在 `SW[0]=0` 时能显示 `D_mem.coe` 图形表数值，在 `SW[0]=1` 图形模式下与参考图形不一致；后续若要修正，应优先核对 `D_mem.coe` 图形编码与 `SSeg7.edf` 版本，而不是修改 CPU 数据通路。
+- 自研 CPU 兼容策略：`rtl/SCPU.v` 必须保持老师板级端口名，包括 `MIO_ready`、`dm_ctrl`、`CPU_MIO`、`INT`。当前 60–70 分阶段暂不实现中断，`INT` 和 `MIO_ready` 只保留接口；`CPU_MIO` 初版固定为 `1'b0`。
 - 计时中断、按钮单步和 50/25 MHz 优化暂不属于本次基线，不得在未验证老师工程前加入。
 
-当前下一步是让自己的 `rtl/SCPU.v` 兼容 `edf/SCPU.v` 的板级接口，然后在不修改外围 EDF、ROM/RAM IP 和 XDC 的前提下替换老师 `SCPU.edf`。macOS 上的 Icarus 端口检查不能验证 EDF 网表、IP 或时序，最终仍必须在 Vivado 和开发板上确认。
+当前下一步是在 Windows Vivado 中禁用 `edf/SCPU.edf`，加入 `rtl/SCPU.v` 及其依赖，并在不修改外围 EDF、ROM/RAM IP 和 XDC 的前提下重新综合、实现和下板。macOS 上的 Icarus 端口检查不能验证 EDF 网表、IP 或时序，最终仍必须在 Vivado 和开发板上确认。

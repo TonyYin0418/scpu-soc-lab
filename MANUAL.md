@@ -35,6 +35,8 @@ iverilog -g2012 -Wall -s sccomp_tb -o build/simv -f files.f
 
 `files.f` 供原单周期 Icarus 仿真使用，`board_files.f` 供完整板级接口检查使用。当前 slang-server 通过 `.slang/server.json` 的 `build` 字段使用不含 `top.v` 的 `board_deps.f`，由服务端只加入一次当前打开的顶层，以规避 1.28.1 WASM 的重复/孤立分析问题。不要再在 `flags` 中写 `-f`。这些 filelist 分开也能避免自己的 `rtl/SCPU.v` 与老师同名但接口不同的 `edf/SCPU.v` 冲突。
 
+自研 CPU 替换老师 `SCPU.edf` 的本地端口检查使用 `board_own_files.f`。它用 `rtl/SCPU.v` 及其依赖替代 `edf/SCPU.v`，其余外围仍使用老师 EDF stub。
+
 若 Problems 又出现整页 `unknown module` 或 `duplicate definition of top`，执行 **Verilog: Set slang-server Build File** 并选择 `board_deps.f`，再执行 **Verilog: Restart slang-server**。新版插件的会话级 Build File 会覆盖 JSON 中的默认值，因此不能选择 `board_files.f`。
 
 ## 4. 运行回归测试
@@ -219,7 +221,56 @@ edf/SSeg7.edf
 
 老师 EDF 外围系统已经完成一次实板基线验证，下一步可以开始替换 CPU：禁用 `edf/SCPU.edf`，加入自己的 CPU RTL，并使顶层接口与 `edf/SCPU.v` 中的 `SCPU` 接口一致。外围的 MIO、RAM 控制、数码管和计数器保持不变。这不是两个完全独立的工程，而是同一个板级外壳下的两个 CPU 实现阶段。
 
-当前自己的 `rtl/SCPU.v` 与老师板级接口还有差异：仿真接口使用 `DMType`、`reg_sel`、`reg_data`，但老师板级接口需要 `dm_ctrl`、`MIO_ready`、`CPU_MIO`、`INT`。替换前应先做接口兼容，不要改外围 EDF。
+当前 `feature/own-scpu-board` 分支已经做了最小兼容：
+
+- `rtl/SCPU.v` 端口对齐老师 `edf/SCPU.v`，使用 `dm_ctrl` 替代原 `DMType` 外部端口。
+- `MIO_ready`、`CPU_MIO`、`INT` 已补齐。当前 37 条单周期阶段暂不实现中断或 ready/stall 机制，`CPU_MIO` 初版固定为 `1'b0`。
+- `reg_sel`、`reg_data` 不再属于 `SCPU` 板级端口；仿真 wrapper `rtl/sccomp.v` 保留自己的调试输出。
+- 新增 `board_own_files.f`，用于检查 `board/top.v` 能否直接例化自研 `rtl/SCPU.v`。
+
+本地验证命令：
+
+```bash
+iverilog -g2012 -Wall -s sccomp_tb -o build/simv -f files.f
+vvp -n build/simv
+vvp -n build/simv +TEST_AUIPC
+vvp -n build/simv +TEST37
+iverilog -g2012 -Wall -s top -o build/top_own_check -f board_own_files.f
+```
+
+进入 Vivado 替换时：
+
+1. 禁用或移除 `edf/SCPU.edf`。
+2. 加入以下自研 CPU RTL：
+
+```text
+rtl/SCPU.v
+rtl/ctrl.v
+rtl/alu.v
+rtl/EXT.v
+rtl/NPC.v
+rtl/PC.v
+rtl/RF.v
+rtl/ctrl_encode_def.v
+```
+
+3. 保持以下外围不变：
+
+```text
+edf/MIO_BUS.edf
+edf/dm_controller.edf
+edf/SPIO.edf
+edf/Multi_8CH32.edf
+edf/SSeg7.edf
+ROM_D
+RAM_B
+constraints/icf.xdc
+board/top.v
+```
+
+4. 重新执行综合、实现、生成 bitstream 和 Program Device。
+
+如果 Vivado 报 `duplicate definition of SCPU`，说明老师 `edf/SCPU.edf` 和自研 `rtl/SCPU.v` 被同时加入了工程；必须只保留其中一个。
 
 ## 8. 从汇编生成 COE
 
