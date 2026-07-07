@@ -8,7 +8,7 @@
 
 当前自研 CPU 板级基线已经能运行参考 IO 程序：跑马灯、0~F 显示、寄存器递增等功能符合要求。此前矩形/图形变化显示异常已确认不是 CPU、顶层、RAM/ROM 或 `SSeg7` 接口问题，而是老师给的矩形变换测试/图形编码本身有误，疑似共阳极/共阴极硬编码混淆；该现象不再作为本项目实现遗留问题。
 
-当前板级代码的端口连接已通过 Icarus 黑盒接口检查。此检查只能发现模块名、端口名和位宽错误，不能仿真 EDF 内部功能，也不能代替 Vivado 综合。自研 CPU 已完成一次实板 IO 演示验证；若老师要求 Test-37 专用 COE 下板，还需要单独生成并导入 Test-37 对应 COE。
+当前板级代码的端口连接已通过 Icarus 黑盒接口检查。此检查只能发现模块名、端口名和位宽错误，不能仿真 EDF 内部功能，也不能代替 Vivado 综合。自研 CPU 已完成 `testac.coe` 实板验收：`SW[7:5]=000`、`SW[2]=0` 时，阶段标记后进入 `88C6` 成功动画。老师 `SCPU.edf` 在同一 `testac.coe` 下会停在 `FA123456`，后续单周期验收以自研 `rtl/SCPU.v` 的实测结果为准。
 
 所有命令默认在项目根目录 `SCPU_SOC` 中执行。
 
@@ -273,9 +273,84 @@ edf/SSeg7.edf
 - Vivado bitstream 生成成功，Program Device 成功。
 - 使用老师 `edf/SCPU.edf`、`coe/board/board_io_demo_instr.coe`、`coe/board/board_io_demo_data.coe` 时，跑马灯、0~F 数据显示、寄存器递增等参考功能符合要求。
 - 替换为自己的 `rtl/SCPU.v` 后，重新生成 bitstream 并 Program Device，参考 IO 测试现象仍符合要求。
+- 使用自己的 `rtl/SCPU.v` 和 `coe/board/testac.coe` 后，实板验收通过：`SW[7:5]=000` 观察 MMIO data0，`SW[2]=0` 使用快 CPU 时钟，复位释放后程序经过六个阶段标记并进入 `88C6` 成功动画。老师 `edf/SCPU.edf` 在该测试中会停在 `FA123456`，该现象记录为参考 EDF 与当前测试不匹配，不作为自研 CPU 错误。
 - 老师给的矩形/图形变化测试代码或图形编码存在问题，疑似共阳极/共阴极硬编码混淆；该问题不影响 CPU、顶层或自研 `dm_controller` 的正确性判断。
 
-### 7.6 后续替换为自己的 CPU
+### 7.6 testac.coe 实板验收程序
+
+`coe/board/testac.coe` 是当前单周期下板验收程序，共 670 条指令，导入 Vivado `ROM_D` 使用。配套执行轨迹保存在 `coe/board/testac模拟.txt`，当前前 1000 条执行轨迹与 COE 指令索引逐条对齐。反汇编保存在 `docs/disasm/testac.disasm.md`。
+
+运行设置：
+
+```text
+SW[7:5] = 000    # 数码管显示 Multi_8CH32 的 data0，即 MMIO 显示数据
+SW[2]   = 0      # 快 CPU 时钟
+SW[0]   = 0      # 文本/十六进制显示
+```
+
+复位并释放后，程序会快速经过六个阶段标记：
+
+```text
+00111100
+00222200
+00333300
+00444400
+00555500
+00666600
+```
+
+这些值不是人工猜测，而是程序显式写入 `0xE0000000` 显示 MMIO。例如第一阶段在反汇编中为：
+
+```asm
+00000250:  e0000737    lui  a4,0xe0000
+00000254:  001117b7    lui  a5,0x111
+00000258:  10078793    addi a5,a5,256
+0000025c:  00f72023    sw   a5,0(a4)       # 写 0x00111100 到 0xE0000000
+```
+
+第二阶段同理写 `0x00222200`：
+
+```asm
+000002e4:  e0000737    lui  a4,0xe0000
+000002e8:  002227b7    lui  a5,0x222
+000002ec:  20078793    addi a5,a5,512
+000002f0:  00f72023    sw   a5,0(a4)       # 写 0x00222200 到 0xE0000000
+```
+
+全通过后程序不会停机，而是进入无限成功动画。完整帧会移动 `88C6` 图案，常见帧包括：
+
+```text
+FF88C6FF
+FFFF88C6
+C6FFFF88
+88C6FFFF
+```
+
+失败时程序会冻结在固定错误码，并在内部把 PC 锁在 `0x218` 的死循环处。错误处理逻辑位于 `0x204`：
+
+```asm
+00000204:  f0000737    lui  a4,0xf0000
+00000208:  00402783    lw   a5,4(zero)
+0000020c:  00e7e7b3    or   a5,a5,a4
+00000210:  e0000737    lui  a4,0xe0000
+00000214:  00f72023    sw   a5,0(a4)       # 显示 0xF0000000 | RAM[4]
+00000218:  0000006f    j    .
+```
+
+程序用 RAM[4] 保存阶段进度；因此错误码含义如下：
+
+```text
+FAAAAAA1  Test 1 失败
+FAAAAA12  Test 2 失败
+FAAAA123  Test 3 失败
+FAAA1234  Test 4 失败
+FAA12345  Test 5 失败
+FA123456  Test 6 失败
+```
+
+Test 6 的关键判断位于 `0xA50` 到 `0xA74`：输入 `a0=0x12345678`，调用 `0x938` 后期望 `a0=0x7c223fb2`。若不相等则跳到错误处理，显示 `FA123456`。
+
+### 7.7 后续替换为自己的 CPU
 
 老师 EDF 外围系统和自研单周期 CPU 都已经完成一次实板基线验证。后续继续保持同一个板级外壳：外围的 MIO、RAM 控制、数码管和计数器保持不变，CPU 实现可以在老师 `SCPU.edf`、自研单周期 CPU、后续流水线 CPU 之间替换。
 
@@ -348,7 +423,10 @@ coe/
 ├── board/
 │   ├── board_io_demo_instr.coe   # 原 I_mem.coe，已完成实板 IO 演示验证
 │   ├── board_io_demo_data.coe    # 原 D_mem.coe，板级 IO 演示数据
-│   └── teacher_test_1_instr.coe  # 原 test.coe，659 条指令，适合 1024 深度 ROM_D
+│   ├── testac.coe                # 当前单周期实板验收程序，670 条指令
+│   └── testac模拟.txt            # testac 的执行轨迹说明，前 1000 条与 COE 对齐
+├── docs/disasm/
+│   └── testac.disasm.md          # testac.coe 反汇编，用于查阶段标记和失败处理
 └── sim/
     └── test8_instr.coe           # 原 Test_8_Instr.coe，仅保留作 COE 参考；Icarus 使用 .dat
 ```
