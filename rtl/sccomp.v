@@ -16,20 +16,25 @@ module sccomp(
     wire [31:0] dm_addr;
     wire [31:0] dm_write_data;
     wire [31:0] dm_read_data;
+    wire        cpu_mio;
 
     SCPU U_SCPU(
         .clk(clk),
         .reset(reset),
+        .MIO_ready(cpu_mio),
         .inst_in(instr),
         .Data_in(dm_read_data),
         .mem_w(mem_write),
-        .DMType(dm_type),
         .PC_out(pc),
         .Addr_out(dm_addr),
         .Data_out(dm_write_data),
-        .reg_sel(reg_sel),
-        .reg_data(reg_data)
+        .dm_ctrl(dm_type),
+        .CPU_MIO(cpu_mio),
+        .INT(1'b0)
     );
+
+    // 仿真调试端口保留在 sccomp 层；SCPU 本身使用老师板级接口。
+    assign reg_data = (reg_sel == 5'b0) ? 32'b0 : U_SCPU.U_RF.rf[reg_sel];
 
     dm U_DM(
         .clk(clk),
