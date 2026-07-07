@@ -1,8 +1,8 @@
 # 冒险流水线 CPU 设计计划
 
-本文档用于规划 70–80 分阶段的 37 条指令冒险流水线 CPU。当前只确定设计方案和验收路径，不开始修改 RTL。
+本文档用于规划并记录 70–80 分阶段的 37 条指令冒险流水线 CPU。
 
-目标是：在保留现有单周期 CPU 可用基线的前提下，实现可下板的 5 级冒险流水线 CPU，并成功运行课程 37 条指令测试程序。
+目标是：以 Git 历史中的单周期 CPU 为可回退基线，实现可下板的 5 级冒险流水线 CPU，并成功运行课程 37 条指令测试程序。
 
 ## 1. 当前基线
 
@@ -14,7 +14,7 @@
 - Vivado 下板已验证基本 IO 演示程序可运行。
 - `dm_ctrl` 编码已和老师补充文档一致。
 
-流水线阶段不得破坏上述基线。所有改动都应能回退到当前单周期版本。
+流水线阶段在 `feature/pipeline-cpu` 分支推进。方案 B 已确定：直接把 `rtl/SCPU.v` 改为流水线版本；单周期版本通过 `main` 分支和历史 commit 回退，不再额外保留一份 `SCPU_SINGLE.v`。
 
 ## 2. 固定目标
 
@@ -402,9 +402,9 @@ mem_data = Data_in
 `define dm_byte_unsigned     3'b100
 ```
 
-## 8. 模块划分计划
+## 8. 模块划分
 
-第一版建议保守复用现有模块：
+第一版保守复用现有模块：
 
 ```text
 RF
@@ -414,27 +414,22 @@ ctrl_encode_def.v
 dm_ctrl 编码
 ```
 
-可能需要新增：
+已新增：
 
 ```text
-SCPU_PIPE.v          # 流水线 CPU 顶层
 hazard_unit.v        # load-use stall 和 flush 控制
 forward_unit.v       # EX 阶段 forwarding 选择
-pipeline_regs.v      # 可选；也可先写在 SCPU_PIPE 内部
 ```
 
-第一版为了调试方便，可以先把 pipeline register 写在 `SCPU_PIPE.v` 内部。等功能稳定后，再决定是否拆成独立模块。
+流水线寄存器不新建通用打包模块，直接在 `rtl/SCPU.v` 内部按 IF/ID、ID/EX、EX/MEM、MEM/WB 显式声明字段。这样可读性更好，也方便按课程数据通路逐项检查。
 
-## 9. 文件组织建议
+## 9. 文件组织
 
-建议不要直接覆盖当前 `rtl/SCPU.v`。
-
-推荐结构：
+当前结构：
 
 ```text
 rtl/
-├── SCPU.v              # 当前单周期 CPU，保持可用
-├── SCPU_PIPE.v         # 新流水线 CPU
+├── SCPU.v              # 当前分支中的流水线 CPU；单周期版本保存在 Git 历史/main 分支
 ├── hazard_unit.v       # 新增
 ├── forward_unit.v      # 新增
 ├── alu.v               # 复用
@@ -444,20 +439,7 @@ rtl/
 └── ctrl_encode_def.v   # 复用
 ```
 
-原因：
-
-- 目录不大，暂时不必拆成 `single/`、`pipeline/`、`common/`。
-- 保留 `rtl/SCPU.v` 能随时回到已经下板成功的单周期版本。
-- 新增 `SCPU_PIPE.v` 更容易和单周期对照。
-
-后续下板时再决定：
-
-```text
-方案 A：把 SCPU_PIPE 包一层 wrapper，模块名仍叫 SCPU
-方案 B：复制/替换为 rtl/SCPU.v
-```
-
-第一版推荐方案 A，避免破坏单周期基线。
+`files.f` 和 `board_own_files.f` 已加入 `forward_unit.v`、`hazard_unit.v`，保证 Icarus 和板级端口检查使用同一版流水线 CPU。
 
 ## 10. 测试计划
 
@@ -616,6 +598,7 @@ iverilog -g2012 -Wall -s top -o build/top_own_check -f board_own_files.f
 ### P5：板级替换和下板
 
 - 流水线 CPU 兼容老师 `SCPU` 接口。
+- CPU 时钟必须走全局时钟网络。当前已采用 `clkdiv[0] -> BUFG -> Clk_CPU`，即 50 MHz。不要直接用普通 `assign Clk_CPU = clkdiv[x]` 或 `SW[2] ? clkdiv[a] : clkdiv[b]` 驱动 CPU；该写法曾导致不同分频位/不同 mux 组合下出现 `FA123456` 和全 8 等不稳定现象。
 - Vivado 生成 bitstream。
 - Program Device 后运行板级测试程序。
 
@@ -707,7 +690,6 @@ rtl/forward_unit.v
 - Test-8、AUIPC、Test-37 全部通过。
 - 能替换当前板级 `SCPU` 接口。
 - Vivado 能综合、实现、生成 bitstream。
-- 开发板运行测试程序成功。
+- 开发板运行测试程序成功；当前 `testac.coe` 在 `clkdiv[0] -> BUFG` 的 50 MHz CPU 时钟下已通过实板测试。
 
 只有仿真通过但没有下板，不算完成本阶段。
-

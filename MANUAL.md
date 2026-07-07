@@ -10,6 +10,8 @@
 
 当前板级代码的端口连接已通过 Icarus 黑盒接口检查。此检查只能发现模块名、端口名和位宽错误，不能仿真 EDF 内部功能，也不能代替 Vivado 综合。自研 CPU 已完成 `testac.coe` 实板验收：`SW[7:5]=000`、`SW[2]=0` 时，阶段标记后进入 `88C6` 成功动画。老师 `SCPU.edf` 在同一 `testac.coe` 下会停在 `FA123456`，后续单周期验收以自研 `rtl/SCPU.v` 的实测结果为准。
 
+当前正在 `feature/pipeline-cpu` 分支推进 70–80 分阶段。该分支采用方案 B：`rtl/SCPU.v` 直接作为五级冒险流水线 CPU，单周期版本通过 `main` 分支和历史 commit 保留。流水线第一版已经通过 Icarus 的 Test-8、AUIPC 补测、Test-37，以及 `board/top.v` 端口级编译检查；实板测试中发现直接使用 `clkdiv[x]` 驱动 CPU 会因未走全局时钟网络产生不稳定现象，已改为 `clkdiv[0] -> BUFG -> Clk_CPU`，当前 50 MHz 下 `testac.coe` 可进入成功动画。
+
 所有命令默认在项目根目录 `SCPU_SOC` 中执行。
 
 ## 2. 环境检查
@@ -136,6 +138,8 @@ vvp -n build/simv +TEST37
 [通过] 所有检查均通过
 ```
 
+注意：Test-37 末尾不是停机程序。它在 `jalr` 返回后会短暂写出 `dmem[0] <= 0x000007b2`，随后自然落入 `F_Test_JAL` 并继续循环覆盖 `dmem[0]`。单周期旧检查可以卡在固定 PC 点；流水线版本不能依赖固定 PC，当前 testbench 按第一次写出 `0x000007b2` 的事件判定通过。
+
 建议按 Test-8、AUIPC、Test-37 的顺序运行，使最后保留的结果和波形对应 Test-37。
 
 检查最后一次测试结果：
@@ -170,9 +174,12 @@ open -a GTKWave build/sccomp_tb.vcd
 
 - `clk`、`rstn`
 - `pc`、`instr`
-- `RD1`、`RD2`、`immout`
-- `ALUOp`、`aluout`、`Zero`
-- `RegWrite`、`write_data`
+- `if_id_valid`、`if_id_pc`、`if_id_inst`
+- `id_ex_valid`、`id_ex_pc`、`id_ex_rs1_data`、`id_ex_rs2_data`、`id_ex_imm`
+- `ex_mem_valid`、`ex_mem_alu_result`、`ex_mem_store_data`
+- `mem_wb_valid`、`mem_wb_rd`、`wb_data`、`wb_reg_write`
+- `stall_load_use`、`forward_a_sel`、`forward_b_sel`
+- `ex_redirect`、`ex_redirect_pc`
 - `mem_write`、`dm_addr`、`dm_write_data`、`dm_type`
 
 波形用于定位失败原因，整体 PASS/FAIL 以自检 testbench 为准。
@@ -249,13 +256,14 @@ edf/SSeg7.edf
 
 板载输入 `clk` 是 100 MHz。当前 `IO/clk_div.v` 的真实行为是：
 
-- `SW[2]=0`：CPU 使用 `clkdiv[3]`，频率 6.25 MHz。
-- `SW[2]=1`：CPU 使用 `clkdiv[24]`，频率约 2.98 Hz；该位每 `2^24` 个输入周期翻转一次，完整周期为 `2^25` 分频。
+- CPU 固定使用 `clkdiv[0]` 经 `BUFG` 后的 `Clk_CPU`，频率为 50 MHz。
+- `SW[2]` 端口当前保留给 `clk_div` 接口兼容，但流水线阶段不再用它运行时切换快/慢 CPU 时钟。
+- 原先直接 `assign Clk_CPU = clkdiv[x]` 或 `SW[2] ? clkdiv[a] : clkdiv[b]` 的写法可能让 CPU 时钟走普通 routing 或普通 LUT mux。该写法曾出现 `clkdiv[1]`、`clkdiv[2]`、`clkdiv[3]` 表现不一致，以及 mux 组合变化导致 `FA123456` 等不稳定现象。修正方法是显式实例化 `BUFG`，让 CPU 时钟走 FPGA 全局时钟网络。
 - `SW[7:5]`：选择数码管显示源，依次为外设输入、`PC[31:2]`、当前指令、计数器、CPU 地址、CPU 写数据、CPU 读数据、PC。
 - `SW[4:3]`：由当前 `coe/board/board_io_demo_instr.coe` 中的 IO 演示程序读取并决定显示效果；已观察到跑马灯、0~F 数据显示、寄存器递增等模式符合参考要求。
 - `SW[0]`：传入 `SSeg7` 的文本/图形显示选择。此前矩形/图形变化显示异常已确认来自老师测试/图形编码问题，不作为 CPU 或顶层实现错误。
 
-当前实现是自动慢速运行，不是按钮按一下执行一步。按钮单步等老师基线成功后再增加。
+当前实现是自动运行，不是按钮按一下执行一步。按钮单步等后续需要时再增加。
 
 ### 7.5 XDC、综合与下载
 
@@ -264,7 +272,7 @@ edf/SSeg7.edf
 3. 依次执行 **Run Synthesis → Run Implementation → Report Timing Summary**。
 4. 确认没有 unconstrained top-level port、unresolved black box、关键 DRC 或负的 setup slack 后，再执行 **Generate Bitstream**。
 5. 在 Hardware Manager 中 **Open Target → Auto Connect → Program Device**。
-6. 先复位，再用 `SW[2]=1` 慢速观察 PC/指令变化；确认基本运行后切换到 `SW[2]=0`。
+6. 复位后观察数码管输出；当前 CPU 时钟固定为 50 MHz，`SW[2]` 不再用于切换 CPU 快慢。
 
 当前顶层没有独立的 PASS 灯或自动停机逻辑。`coe/board/board_io_demo_instr.coe`/`coe/board/board_io_demo_data.coe` 当前是老师板级 IO 演示程序和数据，不是 Icarus 仿真使用的 `sim/data/Test_37_Instr8.dat`。因此本阶段的实板结果用于确认 CPU 与板级 IO 外围可运行；课程 Test-37 的指令正确性仍以 Icarus 自检为主要证据。如需 Test-37 实板验收，应另行导入 Test-37 对应 COE。
 
@@ -273,7 +281,7 @@ edf/SSeg7.edf
 - Vivado bitstream 生成成功，Program Device 成功。
 - 使用老师 `edf/SCPU.edf`、`coe/board/board_io_demo_instr.coe`、`coe/board/board_io_demo_data.coe` 时，跑马灯、0~F 数据显示、寄存器递增等参考功能符合要求。
 - 替换为自己的 `rtl/SCPU.v` 后，重新生成 bitstream 并 Program Device，参考 IO 测试现象仍符合要求。
-- 使用自己的 `rtl/SCPU.v` 和 `coe/board/testac.coe` 后，实板验收通过：`SW[7:5]=000` 观察 MMIO data0，`SW[2]=0` 使用快 CPU 时钟，复位释放后程序经过六个阶段标记并进入 `88C6` 成功动画。老师 `edf/SCPU.edf` 在该测试中会停在 `FA123456`，该现象记录为参考 EDF 与当前测试不匹配，不作为自研 CPU 错误。
+- 使用自己的 `rtl/SCPU.v` 和 `coe/board/testac.coe` 后，实板验收通过：`SW[7:5]=000` 观察 MMIO data0，流水线 CPU 使用 `clkdiv[0] -> BUFG` 的 50 MHz 时钟，复位释放后程序经过六个阶段标记并进入 `88C6` 成功动画。老师 `edf/SCPU.edf` 在该测试中会停在 `FA123456`，该现象记录为参考 EDF 与当前测试不匹配，不作为自研 CPU 错误。
 - 老师给的矩形/图形变化测试代码或图形编码存在问题，疑似共阳极/共阴极硬编码混淆；该问题不影响 CPU、顶层或自研 `dm_controller` 的正确性判断。
 
 ### 7.6 testac.coe 实板验收程序
@@ -284,7 +292,7 @@ edf/SSeg7.edf
 
 ```text
 SW[7:5] = 000    # 数码管显示 Multi_8CH32 的 data0，即 MMIO 显示数据
-SW[2]   = 0      # 快 CPU 时钟
+SW[2]   = 任意   # 当前流水线时钟固定为 clkdiv[0] 经 BUFG 后的 50 MHz
 SW[0]   = 0      # 文本/十六进制显示
 ```
 
