@@ -598,6 +598,7 @@ iverilog -g2012 -Wall -s top -o build/top_own_check -f board_own_files.f
 ### P5：板级替换和下板
 
 - 流水线 CPU 兼容老师 `SCPU` 接口。
+- CPU 时钟必须走全局时钟网络。当前已采用 `clkdiv[0] -> BUFG -> Clk_CPU`，即 50 MHz。不要直接用普通 `assign Clk_CPU = clkdiv[x]` 或 `SW[2] ? clkdiv[a] : clkdiv[b]` 驱动 CPU；该写法曾导致不同分频位/不同 mux 组合下出现 `FA123456` 和全 8 等不稳定现象。
 - Vivado 生成 bitstream。
 - Program Device 后运行板级测试程序。
 
@@ -689,6 +690,6 @@ rtl/forward_unit.v
 - Test-8、AUIPC、Test-37 全部通过。
 - 能替换当前板级 `SCPU` 接口。
 - Vivado 能综合、实现、生成 bitstream。
-- 开发板运行测试程序成功。
+- 开发板运行测试程序成功；当前 `testac.coe` 在 `clkdiv[0] -> BUFG` 的 50 MHz CPU 时钟下已通过实板测试。
 
 只有仿真通过但没有下板，不算完成本阶段。

@@ -69,7 +69,8 @@
 - `testac.coe` 的判定协议已记录到 `MANUAL.md`：阶段标记为 `00111100`、`00222200`、`00333300`、`00444400`、`00555500`、`00666600`；失败显示为 `FAAAAAA1` 到 `FA123456`；全通过后进入包含 `FF88C6FF`、`FFFF88C6`、`C6FFFF88`、`88C6FFFF` 的循环动画。协议来源是程序写 `0xE0000000` 显示 MMIO、用 RAM[4] 保存阶段进度，并在失败处理处显示 `0xF0000000 | RAM[4]`。
 - 已进入 70–80 分阶段并创建 `feature/pipeline-cpu` 分支。当前采用方案 B：直接把 `rtl/SCPU.v` 改为五级冒险流水线版本，单周期版本通过 `main` 分支和历史 commit 保留；不再额外维护一份 `SCPU_PIPE.v`。
 - 流水线第一版已实现：IF/ID/EX/MEM/WB 五级，流水线寄存器和 PC 在下降沿更新，分支/跳转在 EX 阶段决策，静态预测 PC+4，taken 时 flush IF/ID 和 ID/EX；新增 `rtl/forward_unit.v` 和 `rtl/hazard_unit.v`，支持 EX/MEM、MEM/WB 转发和 load-use 暂停。
-- 当前流水线仿真状态：`iverilog -g2012 -Wall -s sccomp_tb -o build/simv -f files.f` 通过；`vvp -n build/simv`、`vvp -n build/simv +TEST_AUIPC`、`vvp -n build/simv +TEST37` 均通过；`iverilog -g2012 -Wall -s top -o build/top_own_check -f board_own_files.f` 通过。流水线尚未下板，不能记录为 70–80 分阶段完成。
+- 当前流水线仿真状态：`iverilog -g2012 -Wall -s sccomp_tb -o build/simv -f files.f` 通过；`vvp -n build/simv`、`vvp -n build/simv +TEST_AUIPC`、`vvp -n build/simv +TEST37` 均通过；`iverilog -g2012 -Wall -s top -o build/top_own_check -f board_own_files.f` 通过。
+- 流水线实板时钟问题已定位并修正：直接把 `clkdiv[x]` 或 `SW[2] ? clkdiv[a] : clkdiv[b]` 作为 CPU 时钟时，Vivado 可能让该时钟走普通 routing/LUT mux，导致不同分频位和 mux 组合表现不一致，出现 `FA123456`、全 8 等不稳定现象。当前 `IO/clk_div.v` 固定使用 `clkdiv[0]` 经 `BUFG` 输出 `Clk_CPU`，即 50 MHz；该方案经用户实板测试 `testac.coe` 可进入成功动画。
 
 支持的指令如下：
 
@@ -185,13 +186,14 @@ gtkwave build/sccomp_tb.vcd
 - 当前 `indexGlobs` 显式列出 `edf/MIO_BUS.V`，原因是该文件扩展名为大写 `.V`；普通目录索引可能漏掉它。不要直接索引整个 `edf/` 目录，否则容易同时索引老师 `edf/SCPU.v` 和自研 `rtl/SCPU.v`，导致同名模块混乱。
 - `ROM_D` 使用 Distributed Memory Generator，`RAM_B` 使用 Block Memory Generator；两者必须在 Vivado 中生成，仓库当前只有连接接口，没有伪造可综合实现。
 - `SCPU` 与 CPU 外围系统必须保持边界清晰。第一步只验证老师 EDF 能在外围系统中运行；替换自己的 CPU 时，接口需匹配 `edf/SCPU.v`，不要修改外围网表。
-- 当前老师 `clk_div.v` 在 100 MHz 输入下令 `SW[2]=0` 选择 `clkdiv[3]`（6.25 MHz），`SW[2]=1` 选择 `clkdiv[24]`（约 2.98 Hz）。`clkdiv[24]` 每 `2^24` 个输入周期翻转一次，因此完整时钟周期是 `2^25` 分频。
+- 当前流水线分支的 `IO/clk_div.v` 在 100 MHz 输入下固定使用 `clkdiv[0]` 经 `BUFG` 后作为 CPU 时钟，频率 50 MHz。`SW[2]` 端口保留给原理图接口兼容，但当前不再用于运行时快/慢时钟选择。
+- 时钟排查结论：`clkdiv[x]` 是计数器输出，直接扇出到大量 CPU 触发器时可能未走全局时钟网络；普通三目表达式做 clock mux 还会引入 LUT mux 和开关选择不确定性。流水线下板必须通过 `BUFG` 分发 `Clk_CPU`。
 - `SW[7:5]` 选择数码管观察内容，`SW[0]` 传给数码管显示模块；管脚由 `constraints/icf.xdc` 约束。
 - `coe/board/board_io_demo_instr.coe`/`coe/board/board_io_demo_data.coe` 当前是老师板级 IO 演示程序和数据，不等同于 `sim/data/Test_37_Instr8.dat`。上板现象用于验证板级 IO 外围系统；课程 Test-37 的指令正确性当前由 Icarus 自检覆盖，若需 Test-37 实板验收应单独导入 Test-37 COE。
 - 已完成一次实板验证：Vivado 生成 bitstream 并 Program Device 成功；使用老师 `SCPU.edf` 时，`SW[7:5]=000` 可观察程序输出，`SW[4:3]` 可切换跑马灯、0~F 数据显示、寄存器递增等模式。
 - 已完成 `testac.coe` 实板验收：当前 `coe/board/testac.coe` 与 `coe/board/testac模拟.txt` 对齐，反汇编保存在 `docs/disasm/testac.disasm.md`。使用自研 `rtl/SCPU.v` 能进入成功动画；老师 `SCPU.edf` 会停在 `FA123456`，不再作为该测试的正确性依据。
 - 已替换老师 `dm_controller` 黑盒：当前使用自研 `rtl/dm_controller.v`，接口保持 `dm_controller(mem_w, Addr_in, Data_write, dm_ctrl, Data_read_from_dm, Data_read, Data_write_to_dm, wea_mem)` 不变，功能按 `docs/dm_ctrl说明.pdf` 实现读数据扩展、写数据对齐和 4 位字节写使能。
 - 自研 CPU 兼容策略：`rtl/SCPU.v` 必须保持老师板级端口名，包括 `MIO_ready`、`dm_ctrl`、`CPU_MIO`、`INT`。当前 60–70 分阶段暂不实现中断，`INT` 和 `MIO_ready` 只保留接口；`CPU_MIO` 初版固定为 `1'b0`。
-- 计时中断、按钮单步和 50/25 MHz 优化暂不属于本次基线，不得在未验证老师工程前加入。
+- 计时中断和按钮单步暂不属于本次基线。50 MHz 运行已通过 `clkdiv[0] -> BUFG` 实板验证；如未来恢复 SW[2] 快慢切换，应使用专用时钟 mux（如 BUFGMUX）或确保只在 reset 时选择，不能回到普通 `?:` clock mux。
 
 当前下一步是以现有单周期 CPU 为黄金参考，准备 70–80 分阶段的冒险流水线 CPU 方案。macOS 上的 Icarus 端口检查不能验证 EDF 网表、IP 或时序，最终仍以 Vivado 和开发板确认为准。
