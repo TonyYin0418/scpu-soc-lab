@@ -59,13 +59,13 @@
 
 - 已完成：37 条指令单周期 RTL、中文注释、Test-8、课程 Test-37、AUIPC 补测和 Icarus 自检。
 - 已完成板级接口基线：整理老师提供的 EDF/IO/汇编工具，按 `docs/schematic.pdf` 创建 `board/top.v`，并用黑盒接口完成 Icarus 端口级编译检查。
-- 已完成老师 EDF 板级外壳实板基线：在 Vivado 中使用老师提供的 `edf/SCPU.edf`、外围 EDF、`I_mem.coe` 和 `D_mem.coe` 生成 bitstream 并 Program Device，板上跑马灯、0~F 显示、寄存器递增等参考功能符合要求。
+- 已完成老师 EDF 板级外壳实板基线：在 Vivado 中使用老师提供的 `edf/SCPU.edf`、外围 EDF、`coe/board/board_io_demo_instr.coe` 和 `coe/board/board_io_demo_data.coe` 生成 bitstream 并 Program Device，板上跑马灯、0~F 显示、寄存器递增等参考功能符合要求。
 - 已完成自研单周期 CPU 板级替换验证：在 Vivado 中禁用老师 `edf/SCPU.edf`，加入 `rtl/SCPU.v` 及其依赖后重新生成 bitstream 并 Program Device，板上参考 IO 测试现象符合要求。
 - 已校正 `constraints/icf.xdc`：补齐 5 个按钮，删除临时开关时钟网约束，并将板载 100 MHz 时钟周期修正为 10 ns。
-- 遗留问题：`SW[4:3]=11` 的矩形/图形变化模式能在 `SW[0]=0` 文本模式下观察到 `D_mem.coe` 中 `0x60` 起始的图形表数据（如 `557EF7E0`），说明程序读数和显示通道基本有效；但 `SW[0]=1` 图形模式的实际图案与参考矩形效果不一致。该问题暂不阻塞老师 EDF 板级外壳基线，后续优先核对老师原配 `D_mem.coe` 与 `SSeg7.edf` 版本是否匹配。
+- 已确认此前矩形/图形变化显示异常不是 CPU、顶层、RAM/ROM 或 `SSeg7` 接口问题，而是老师给的矩形变换测试/图形编码本身有误，疑似共阳极/共阴极硬编码混淆；该现象不再作为本项目实现遗留问题。
 - 已在 `feature/own-scpu-board` 分支完成自研单周期 CPU 的板级接口兼容：`rtl/SCPU.v` 端口对齐老师 `edf/SCPU.v`，`rtl/sccomp.v` 已适配新接口，并新增 `board_own_files.f` 用于 `board/top.v` + 自研 CPU 的 Icarus 端口级检查。
 - 当前兼容验证：Test-8、AUIPC 补测、课程 Test-37 均通过；`iverilog -g2012 -Wall -s top -o build/top_own_check -f board_own_files.f` 通过；自研 CPU 替换老师 `SCPU.edf` 后 Vivado bitstream 和实板 IO 演示通过。
-- 注意：当前实板程序仍是 `I_mem.coe`/`D_mem.coe` 对应的板级 IO 演示程序；若老师要求 Test-37 专用 COE 下板，需要另行生成/导入对应 COE 并记录现象。
+- 注意：当前实板程序仍是 `coe/board/board_io_demo_instr.coe`/`coe/board/board_io_demo_data.coe` 对应的板级 IO 演示程序；若老师要求 Test-37 专用 COE 下板，需要另行生成/导入对应 COE 并记录现象。新增的 `coe/board/teacher_test_1_instr.coe` 由原 `test.coe` 重命名而来，已确认包含 659 条 32 位指令，适合 1024 深度的 Vivado `ROM_D`。
 - 尚未开始：冒险流水线、应用、中断/异常及 90–100 分扩展。
 
 支持的指令如下：
@@ -91,6 +91,7 @@ SCPU_SOC/
 │   ├── sccomp_tb.v      # 自检 testbench
 │   └── data/            # 汇编、机器码及 ROM 初始化资料
 ├── constraints/         # Nexys A7-100T 板级 XDC 约束
+├── coe/                 # Vivado ROM/RAM 初始化文件
 ├── docs/                # 课程 DOCX/PDF 规格和板级原理图
 ├── build/               # 仿真可执行文件、结果和波形等生成物
 ├── MANUAL.md            # 人工仿真与未来 Vivado 下板操作指南
@@ -176,16 +177,16 @@ gtkwave build/sccomp_tb.vcd
 
 ## 当前阶段：老师 EDF 板级系统
 
-- `board/top.v` 是当前 Vivado 顶层，连接老师的 `SCPU.edf`、`MIO_BUS.edf`、`dm_controller.edf`、`SPIO.edf`、`Multi_8CH32.edf`、`SSeg7.edf` 以及 `IO/` 中的 RTL。
+- `board/top.v` 是当前 Vivado 顶层，连接老师的 `SCPU.edf`、`MIO_BUS.edf`、`SPIO.edf`、`Multi_8CH32.edf`、`SSeg7.edf`、自研 `rtl/dm_controller.v` 以及 `IO/` 中的 RTL。当前不再使用老师提供的 `edf/dm_controller.edf` 或其 stub 参与构建。
 - VS Code Verilog 跳转当前使用 mshr-h Verilog-HDL 插件 + native `slang-server 0.2.7`。`.slang/server.json` 使用 `flags: -f board_own_files.f` 和精确 `indexGlobs`，已验证 `board/top.v` 中 `Enter`、`clk_div`、`ROM_D`、`SCPU`、`MIO_BUS`、`dm_controller`、`RAM_B`、`SPIO`、`Counter_x`、`Multi_8CH32`、`SSeg7` 均可 Go to Definition。不要退回旧的 `board_own_deps.f + index.dirs` 方案；该方案曾出现重启 VS Code 后 No Definitions。
 - 当前 `indexGlobs` 显式列出 `edf/MIO_BUS.V`，原因是该文件扩展名为大写 `.V`；普通目录索引可能漏掉它。不要直接索引整个 `edf/` 目录，否则容易同时索引老师 `edf/SCPU.v` 和自研 `rtl/SCPU.v`，导致同名模块混乱。
 - `ROM_D` 使用 Distributed Memory Generator，`RAM_B` 使用 Block Memory Generator；两者必须在 Vivado 中生成，仓库当前只有连接接口，没有伪造可综合实现。
 - `SCPU` 与 CPU 外围系统必须保持边界清晰。第一步只验证老师 EDF 能在外围系统中运行；替换自己的 CPU 时，接口需匹配 `edf/SCPU.v`，不要修改外围网表。
 - 当前老师 `clk_div.v` 在 100 MHz 输入下令 `SW[2]=0` 选择 `clkdiv[3]`（6.25 MHz），`SW[2]=1` 选择 `clkdiv[24]`（约 2.98 Hz）。`clkdiv[24]` 每 `2^24` 个输入周期翻转一次，因此完整时钟周期是 `2^25` 分频。
 - `SW[7:5]` 选择数码管观察内容，`SW[0]` 传给数码管显示模块；管脚由 `constraints/icf.xdc` 约束。
-- `I_mem.coe`/`D_mem.coe` 当前是老师板级 IO 演示程序和数据，不等同于 `sim/data/Test_37_Instr8.dat`。上板现象用于验证板级 IO 外围系统；课程 Test-37 的指令正确性当前由 Icarus 自检覆盖，若需 Test-37 实板验收应单独导入 Test-37 COE。
+- `coe/board/board_io_demo_instr.coe`/`coe/board/board_io_demo_data.coe` 当前是老师板级 IO 演示程序和数据，不等同于 `sim/data/Test_37_Instr8.dat`。上板现象用于验证板级 IO 外围系统；课程 Test-37 的指令正确性当前由 Icarus 自检覆盖，若需 Test-37 实板验收应单独导入 Test-37 COE。
 - 已完成一次实板验证：Vivado 生成 bitstream 并 Program Device 成功；使用老师 `SCPU.edf` 时，`SW[7:5]=000` 可观察程序输出，`SW[4:3]` 可切换跑马灯、0~F 数据显示、寄存器递增等模式。
-- 当前遗留：矩形/图形变化模式在 `SW[0]=0` 时能显示 `D_mem.coe` 图形表数值，在 `SW[0]=1` 图形模式下与参考图形不一致；后续若要修正，应优先核对 `D_mem.coe` 图形编码与 `SSeg7.edf` 版本，而不是修改 CPU 数据通路。
+- 已替换老师 `dm_controller` 黑盒：当前使用自研 `rtl/dm_controller.v`，接口保持 `dm_controller(mem_w, Addr_in, Data_write, dm_ctrl, Data_read_from_dm, Data_read, Data_write_to_dm, wea_mem)` 不变，功能按 `docs/dm_ctrl说明.pdf` 实现读数据扩展、写数据对齐和 4 位字节写使能。
 - 自研 CPU 兼容策略：`rtl/SCPU.v` 必须保持老师板级端口名，包括 `MIO_ready`、`dm_ctrl`、`CPU_MIO`、`INT`。当前 60–70 分阶段暂不实现中断，`INT` 和 `MIO_ready` 只保留接口；`CPU_MIO` 初版固定为 `1'b0`。
 - 计时中断、按钮单步和 50/25 MHz 优化暂不属于本次基线，不得在未验证老师工程前加入。
 

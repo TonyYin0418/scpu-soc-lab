@@ -11,8 +11,8 @@
 ./rtl/SCPU.v
 ./rtl/alu.v
 ./rtl/ctrl.v
+./rtl/dm_controller.v
 ./edf/MIO_BUS.V
-./edf/dm_controller.v
 ./edf/SPIO.v
 ./edf/Multi_8CH32.v
 ./edf/SSeg7.v

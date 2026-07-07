@@ -1,11 +1,12 @@
 +incdir+./IO
++incdir+./rtl
 +incdir+./edf
 +incdir+./board
 
 ./editor/ip_stubs.v
 ./edf/SCPU.v
 ./edf/MIO_BUS.V
-./edf/dm_controller.v
+./rtl/dm_controller.v
 ./edf/SPIO.v
 ./edf/Multi_8CH32.v
 ./edf/SSeg7.v
