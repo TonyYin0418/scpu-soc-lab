@@ -1,6 +1,8 @@
 `timescale 1ns/1ps
 
-// 单周期 CPU 自检测试平台。
+// SCPU 自检测试平台。
+// 说明：流水线 CPU 的 PC、写回和访存存在阶段延迟，因此测试不要只依赖
+// 单周期 CPU 的固定 PC 检查点；关键结果改为按“写回/写内存事件”判断。
 // 默认运行 Test-8；添加 +TEST37 参数后运行课程提供的 Test-37。
 // 课程 Test-37 未包含 AUIPC，使用 +TEST_AUIPC 运行补充定向测试。
 module sccomp_tb;
@@ -17,6 +19,11 @@ module sccomp_tb;
     integer test37_mode;
     integer test_auipc_mode;
     integer foutput;
+    integer saw_slt_x27;
+    integer saw_sltu_x28;
+    integer saw_reg_shift_x27;
+    integer saw_reg_shift_x28;
+    integer saw_reg_shift_x29;
     string  mem_file;
 
     sccomp U_SCCOMP(
@@ -39,6 +46,11 @@ module sccomp_tb;
         errors      = 0;
         test37_mode = $test$plusargs("TEST37");
         test_auipc_mode = $test$plusargs("TEST_AUIPC");
+        saw_slt_x27 = 0;
+        saw_sltu_x28 = 0;
+        saw_reg_shift_x27 = 0;
+        saw_reg_shift_x28 = 0;
+        saw_reg_shift_x29 = 0;
 
         // 可用 +MEM_FILE=<路径> 和 +WORDS=<数量> 覆盖默认测试文件。
         if (!$value$plusargs("MEM_FILE=%s", mem_file)) begin
@@ -118,6 +130,18 @@ module sccomp_tb;
         end
     endtask
 
+    task automatic check_seen;
+        input integer seen;
+        input [255:0] name;
+        begin
+            if (!seen) begin
+                errors = errors + 1;
+                $display("[错误] 未观察到预期中间结果：%0s", name);
+                $fdisplay(foutput, "FAIL missing intermediate result: %0s", name);
+            end
+        end
+    endtask
+
     // Test-8 的回归检查。
     task automatic check_test8;
         begin
@@ -182,15 +206,27 @@ module sccomp_tb;
         if (rstn) begin
             counter = counter + 1;
 
-            // 在结果被后续指令覆盖前，检查 SLT/SLTU 和寄存器移位指令。
-            if (test37_mode && (U_SCCOMP.pc == 32'h00000050)) begin
-                check_reg(27, 32'h00000001);
-                check_reg(28, 32'h00000000);
-            end
-            if (test37_mode && (U_SCCOMP.pc == 32'h00000060)) begin
-                check_reg(27, 32'h00004370);
-                check_reg(28, 32'h09876743);
-                check_reg(29, 32'hf9876743);
+            // 等待同一上升沿的寄存器堆/数据存储器非阻塞赋值生效。
+            #1;
+
+            // Test-37 有些结果会被后续指令覆盖。流水线下固定 PC 点不可靠，
+            // 改为记录是否曾经在 WB 阶段写出过这些中间值。
+            if (test37_mode && U_SCCOMP.U_SCPU.wb_reg_write) begin
+                if ((U_SCCOMP.U_SCPU.wb_rd == 5'd27) &&
+                    (U_SCCOMP.U_SCPU.wb_data == 32'h00000001))
+                    saw_slt_x27 = 1;
+                if ((U_SCCOMP.U_SCPU.wb_rd == 5'd28) &&
+                    (U_SCCOMP.U_SCPU.wb_data == 32'h00000000))
+                    saw_sltu_x28 = 1;
+                if ((U_SCCOMP.U_SCPU.wb_rd == 5'd27) &&
+                    (U_SCCOMP.U_SCPU.wb_data == 32'h00004370))
+                    saw_reg_shift_x27 = 1;
+                if ((U_SCCOMP.U_SCPU.wb_rd == 5'd28) &&
+                    (U_SCCOMP.U_SCPU.wb_data == 32'h09876743))
+                    saw_reg_shift_x28 = 1;
+                if ((U_SCCOMP.U_SCPU.wb_rd == 5'd29) &&
+                    (U_SCCOMP.U_SCPU.wb_data == 32'hf9876743))
+                    saw_reg_shift_x29 = 1;
             end
 
             if (!test37_mode && !test_auipc_mode &&
@@ -199,15 +235,23 @@ module sccomp_tb;
                 report_and_finish();
             end
 
-            if (test_auipc_mode && (U_SCCOMP.pc == 32'h00000008)) begin
+            // AUIPC 写回发生在 WB 阶段；等待寄存器值真正出现再检查。
+            if (test_auipc_mode &&
+                (U_SCCOMP.U_SCPU.U_RF.rf[5] == 32'h12345004)) begin
                 check_auipc();
                 report_and_finish();
             end
 
-            // PC=0x110 且 x10=0x7b2 表示 37 指令程序已完成一次 JALR 返回。
-            if (test37_mode &&
-                (U_SCCOMP.pc == 32'h00000110) &&
-                (U_SCCOMP.U_SCPU.U_RF.rf[10] == 32'h000007b2)) begin
+            // Test-37 末尾会自然落入 F_Test_JAL 并循环覆盖 dmem[0]。
+            // 第一次向 dmem[0] 写入 0x7b2 就是该测试的通过观察点。
+            if (test37_mode && U_SCCOMP.U_DM.DMWr &&
+                (U_SCCOMP.U_DM.addr == 9'b0) &&
+                (U_SCCOMP.U_DM.din == 32'h000007b2)) begin
+                check_seen(saw_slt_x27, "slt x27=1");
+                check_seen(saw_sltu_x28, "sltu x28=0");
+                check_seen(saw_reg_shift_x27, "sll x27=0x4370");
+                check_seen(saw_reg_shift_x28, "srl x28=0x09876743");
+                check_seen(saw_reg_shift_x29, "sra x29=0xf9876743");
                 check_test37();
                 report_and_finish();
             end

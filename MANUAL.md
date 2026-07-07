@@ -10,6 +10,8 @@
 
 当前板级代码的端口连接已通过 Icarus 黑盒接口检查。此检查只能发现模块名、端口名和位宽错误，不能仿真 EDF 内部功能，也不能代替 Vivado 综合。自研 CPU 已完成 `testac.coe` 实板验收：`SW[7:5]=000`、`SW[2]=0` 时，阶段标记后进入 `88C6` 成功动画。老师 `SCPU.edf` 在同一 `testac.coe` 下会停在 `FA123456`，后续单周期验收以自研 `rtl/SCPU.v` 的实测结果为准。
 
+当前正在 `feature/pipeline-cpu` 分支推进 70–80 分阶段。该分支采用方案 B：`rtl/SCPU.v` 直接作为五级冒险流水线 CPU，单周期版本通过 `main` 分支和历史 commit 保留。流水线第一版已经通过 Icarus 的 Test-8、AUIPC 补测、Test-37，以及 `board/top.v` 端口级编译检查；尚未完成 Vivado 综合/时序/下板，因此不能把流水线阶段记为完成。
+
 所有命令默认在项目根目录 `SCPU_SOC` 中执行。
 
 ## 2. 环境检查
@@ -136,6 +138,8 @@ vvp -n build/simv +TEST37
 [通过] 所有检查均通过
 ```
 
+注意：Test-37 末尾不是停机程序。它在 `jalr` 返回后会短暂写出 `dmem[0] <= 0x000007b2`，随后自然落入 `F_Test_JAL` 并继续循环覆盖 `dmem[0]`。单周期旧检查可以卡在固定 PC 点；流水线版本不能依赖固定 PC，当前 testbench 按第一次写出 `0x000007b2` 的事件判定通过。
+
 建议按 Test-8、AUIPC、Test-37 的顺序运行，使最后保留的结果和波形对应 Test-37。
 
 检查最后一次测试结果：
@@ -170,9 +174,12 @@ open -a GTKWave build/sccomp_tb.vcd
 
 - `clk`、`rstn`
 - `pc`、`instr`
-- `RD1`、`RD2`、`immout`
-- `ALUOp`、`aluout`、`Zero`
-- `RegWrite`、`write_data`
+- `if_id_valid`、`if_id_pc`、`if_id_inst`
+- `id_ex_valid`、`id_ex_pc`、`id_ex_rs1_data`、`id_ex_rs2_data`、`id_ex_imm`
+- `ex_mem_valid`、`ex_mem_alu_result`、`ex_mem_store_data`
+- `mem_wb_valid`、`mem_wb_rd`、`wb_data`、`wb_reg_write`
+- `stall_load_use`、`forward_a_sel`、`forward_b_sel`
+- `ex_redirect`、`ex_redirect_pc`
 - `mem_write`、`dm_addr`、`dm_write_data`、`dm_type`
 
 波形用于定位失败原因，整体 PASS/FAIL 以自检 testbench 为准。
