@@ -8,6 +8,9 @@
 ./rtl/NPC.v
 ./rtl/PC.v
 ./rtl/RF.v
+./rtl/forward_unit.v
+./rtl/hazard_unit.v
+./rtl/exception_unit.v
 ./rtl/SCPU.v
 ./rtl/alu.v
 ./rtl/ctrl.v

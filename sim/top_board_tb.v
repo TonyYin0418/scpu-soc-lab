@@ -22,6 +22,8 @@ module top_board_tb;
     integer imem_words;
     integer dmem_words;
     integer dump_vcd;
+    integer force_int_start;
+    integer force_int_end;
     integer sw_value;
     integer saw_1111;
     integer saw_2222;
@@ -55,6 +57,8 @@ module top_board_tb;
         imem_words = 1024;
         dmem_words = 0;
         dump_vcd = 0;
+        force_int_start = -1;
+        force_int_end = -1;
         sw_value = 16'h0000; // 默认 SW[7:5]=000，看程序写入的显示通道 data0。
         saw_1111 = 0;
         saw_2222 = 0;
@@ -70,6 +74,8 @@ module top_board_tb;
         void'($value$plusargs("MAX_CYCLES=%d", max_cycles));
         void'($value$plusargs("IMEM_WORDS=%d", imem_words));
         void'($value$plusargs("DMEM_WORDS=%d", dmem_words));
+        void'($value$plusargs("FORCE_INT_START=%d", force_int_start));
+        void'($value$plusargs("FORCE_INT_END=%d", force_int_end));
         dump_vcd = $test$plusargs("DUMP_VCD");
         void'($value$plusargs("SW=%h", sw_value));
         void'($value$plusargs("IMEM=%s", imem_file));
@@ -96,6 +102,10 @@ module top_board_tb;
         $display("[TOP_SIM] imem=%0s dmem=%0s sw=%04h max_cycles=%0d",
                  imem_file, dmem_file, sw_i, max_cycles);
         $display("[TOP_SIM] SW[7:5]=%03b selects Multi_8CH32 display channel", sw_i[7:5]);
+        if (force_int_start >= 0) begin
+            force U_TOP.counter0_OUT = 1'b0;
+            $display("[TOP_SIM] timer INT held low until cycle %0d", force_int_start);
+        end
 
         #100 rstn = 1'b1;
     end
@@ -135,6 +145,15 @@ module top_board_tb;
     always @(posedge clk) begin
         if (rstn) begin
             cycle = cycle + 1;
+
+            if ((force_int_start >= 0) && (cycle == force_int_start)) begin
+                force U_TOP.counter0_OUT = 1'b1;
+                $display("[TOP_SIM] cycle=%0d force timer INT high", cycle);
+            end
+            if ((force_int_end >= 0) && (cycle == force_int_end)) begin
+                force U_TOP.counter0_OUT = 1'b0;
+                $display("[TOP_SIM] cycle=%0d force timer INT low", cycle);
+            end
 
             // 程序写显示 MMIO：这是判断“数码管理论显示值”的最可靠事件。
             if (U_TOP.mem_w && (U_TOP.addr_bus == 32'he000_0000) &&

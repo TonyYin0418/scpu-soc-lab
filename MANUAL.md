@@ -230,6 +230,51 @@ python3 sim/run_top_board_sim.py \
 open -a GTKWave build/top_board_tb.vcd
 ```
 
+### 4.5 单级中断/异常 top 仿真
+
+当前 `feature/interrupt-exception` 分支实现了单级中断/异常：
+
+- 非法指令异常，向量入口 `0x00000300`；
+- `ECALL/SYSCALL`，向量入口 `0x00000320`；
+- 计时中断，向量入口 `0x00000340`；
+- `ERET = 32'h00100073` 返回 `SEPC`；
+- `ERETN = 32'h00200073` 返回 `SEPC + 4`。
+
+`INTMASK` 复位为 0，普通程序默认不会响应计时中断。软件向 `0xFFFF_FF00` 写入 `0x40` 后允许计时中断；写 `INTMASK` 时会清空 pending。
+
+中断/异常测试程序：
+
+```text
+coe/board/I_trap_test.coe
+```
+
+运行 top 级仿真：
+
+```bash
+python3 sim/run_top_board_sim.py \
+  --imem coe/board/I_trap_test.coe \
+  --sw 0000 \
+  --max-cycles 2000 \
+  --force-int-start 80 \
+  --force-int-end 90
+```
+
+预期关键输出：
+
+```text
+display_write=11110000  # 主程序开始
+display_write=e0000002  # ECALL/SYSCALL handler
+display_write=22220000  # ECALL 返回后继续
+display_write=e0000001  # 非法指令 handler
+display_write=33330000  # 非法指令返回后继续
+display_write=e0000006  # 计时中断 handler
+display_write=44440000  # 中断返回后继续
+```
+
+`--force-int-start/end` 只用于 top 仿真中稳定地产生一次计时中断脉冲；真实上板时应通过计数器外设产生 `SCPU.INT`。
+
+注意：不要并行运行两个 `sim/run_top_board_sim.py`，默认都会编译到 `build/top_board_simv`，并行写同一个 vvp 文件会导致 `unresolved label` 等无效错误。
+
 ## 5. 查看波形
 
 命令行安装的 GTKWave：

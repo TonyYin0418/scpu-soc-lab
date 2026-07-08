@@ -7,7 +7,8 @@
 // 1. IF/ID/EX/MEM/WB 五级，静态预测 PC+4。
 // 2. 分支和跳转在 EX 阶段决定；预测错误时清空 IF/ID、ID/EX。
 // 3. 流水线寄存器和 PC 在下降沿更新，寄存器堆沿用教材假设在上升沿写回。
-// 4. 当前阶段不实现 MIO_ready/INT，中断异常留给后续阶段。
+// 4. 支持单级中断/异常：非法指令、ECALL/SYSCALL、计时中断 INT，
+//    以及课程自定义返回指令 ERET/ERETN。
 //
 // 时钟关系：
 // - 本模块输入 clk 是板级 Clk_CPU，当前由 clkdiv[0] 经 BUFG 得到 50 MHz。
@@ -45,10 +46,25 @@ module SCPU(
     localparam [6:0] OP_BRANCH = 7'b1100011;
     localparam [6:0] OP_JALR   = 7'b1100111;
     localparam [6:0] OP_JAL    = 7'b1101111;
+    localparam [6:0] OP_SYSTEM = 7'b1110011;
 
-    // 当前 37 条指令阶段暂不使用 MIO ready/中断。
-    // 端口保留是为了兼容老师 SCPU.edf 的板级接口。
+    // 当前阶段不使用 MIO_ready；CPU_MIO 保持为 0 以兼容老师板级接口。
     assign CPU_MIO = 1'b0;
+
+    // ---------------------------------------------------------------------
+    // 单级中断/异常状态。
+    //
+    // SEPC   ：进入 trap 时当前 EX 阶段指令 PC。
+    // SCAUSE ：进入 trap 的原因码。
+    // STATUS[0]：EXL/in_trap，进入 trap 后置 1，ERET/ERETN 清 0。
+    // INTMASK[6]：允许计时中断。软件可向 0xFFFF_FF00 写入低 8 位更新。
+    // int_pending[6]：INT 输入锁存的计时中断 pending。
+    // ---------------------------------------------------------------------
+    reg [31:0] SEPC;
+    reg [7:0]  SCAUSE;
+    reg [7:0]  STATUS;
+    reg [7:0]  INTMASK;
+    reg [7:0]  int_pending;
 
     // ---------------------------------------------------------------------
     // IF：PC 寄存器。ROM 地址直接来自 PC_out。
@@ -169,6 +185,55 @@ module SCPU(
     wire id_is_branch = (id_op == OP_BRANCH);
     wire id_is_jal    = (id_op == OP_JAL);
     wire id_is_jalr   = (id_op == OP_JALR);
+    wire id_is_system = (id_op == OP_SYSTEM);
+    wire id_is_ecall  = (if_id_inst == `INST_ECALL);
+    wire id_is_eret   = (if_id_inst == `INST_ERET);
+    wire id_is_eretn  = (if_id_inst == `INST_ERETN);
+
+    wire id_reg_legal =
+        (id_funct3 == 3'b000) ? ((id_funct7 == 7'b0000000) || (id_funct7 == 7'b0100000)) :
+        (id_funct3 == 3'b001) ?  (id_funct7 == 7'b0000000) :
+        (id_funct3 == 3'b010) ?  (id_funct7 == 7'b0000000) :
+        (id_funct3 == 3'b011) ?  (id_funct7 == 7'b0000000) :
+        (id_funct3 == 3'b100) ?  (id_funct7 == 7'b0000000) :
+        (id_funct3 == 3'b101) ? ((id_funct7 == 7'b0000000) || (id_funct7 == 7'b0100000)) :
+        (id_funct3 == 3'b110) ?  (id_funct7 == 7'b0000000) :
+        (id_funct3 == 3'b111) ?  (id_funct7 == 7'b0000000) :
+                                1'b0;
+
+    wire id_imm_legal =
+        (id_funct3 == 3'b001) ? (id_funct7 == 7'b0000000) :
+        (id_funct3 == 3'b101) ? ((id_funct7 == 7'b0000000) || (id_funct7 == 7'b0100000)) :
+        ((id_funct3 == 3'b000) || (id_funct3 == 3'b010) ||
+         (id_funct3 == 3'b011) || (id_funct3 == 3'b100) ||
+         (id_funct3 == 3'b110) || (id_funct3 == 3'b111));
+
+    wire id_load_legal   = (id_funct3 == 3'b000) || (id_funct3 == 3'b001) ||
+                           (id_funct3 == 3'b010) || (id_funct3 == 3'b100) ||
+                           (id_funct3 == 3'b101);
+    wire id_store_legal  = (id_funct3 == 3'b000) || (id_funct3 == 3'b001) ||
+                           (id_funct3 == 3'b010);
+    wire id_branch_legal = (id_funct3 == 3'b000) || (id_funct3 == 3'b001) ||
+                           (id_funct3 == 3'b100) || (id_funct3 == 3'b101) ||
+                           (id_funct3 == 3'b110) || (id_funct3 == 3'b111);
+
+    wire id_instruction_legal =
+        (id_op == OP_REG)    ? id_reg_legal :
+        (id_op == OP_IMM)    ? id_imm_legal :
+        (id_op == OP_LOAD)   ? id_load_legal :
+        (id_op == OP_STORE)  ? id_store_legal :
+        (id_op == OP_BRANCH) ? id_branch_legal :
+        (id_op == OP_JALR)   ? (id_funct3 == 3'b000) :
+        (id_op == OP_AUIPC)  ? 1'b1 :
+        (id_op == OP_LUI)    ? 1'b1 :
+        (id_op == OP_JAL)    ? 1'b1 :
+        (id_op == OP_SYSTEM) ? (id_is_ecall || id_is_eret || id_is_eretn) :
+                               1'b0;
+
+    wire        id_exception_valid = if_id_valid && (!id_instruction_legal || id_is_ecall);
+    wire [7:0]  id_exception_cause = !id_instruction_legal ? `SCAUSE_ILLEGAL :
+                                      id_is_ecall          ? `SCAUSE_ECALL :
+                                                             `SCAUSE_NONE;
 
     wire id_uses_rs1 = (id_op == OP_REG)    ||
                        (id_op == OP_IMM)    ||
@@ -209,6 +274,10 @@ module SCPU(
     reg        id_ex_branch;
     reg        id_ex_jal;
     reg        id_ex_jalr;
+    reg        id_ex_exception_valid;
+    reg [7:0]  id_ex_exception_cause;
+    reg        id_ex_eret;
+    reg        id_ex_eretn;
 
     // ---------------------------------------------------------------------
     // EX/MEM 流水寄存器。
@@ -331,6 +400,38 @@ module SCPU(
                                 : (id_ex_pc + id_ex_imm);
 
     // ---------------------------------------------------------------------
+    // EX 阶段中断/异常控制。
+    //
+    // 同步异常由 ID 阶段标记并随指令进入 EX；计时中断由 INT pending
+    // 进入 ExceptionUnit。trap 和 ERET/ERETN 的跳转优先级高于 branch/jump。
+    // ---------------------------------------------------------------------
+    wire [7:0] ex_scause = (id_ex_valid && id_ex_exception_valid)
+                         ? id_ex_exception_cause
+                         : `SCAUSE_NONE;
+    wire       ex_trap_set;
+    wire       ex_int_signal;
+    wire [2:0] ex_int_pend_id;
+    wire [7:0] ex_trap_cause;
+    wire [31:0] ex_trap_vector;
+    wire [7:0] ex_int_pending_for_unit = id_ex_valid ? int_pending : 8'b0;
+    wire       ex_eret  = id_ex_valid && id_ex_eret;
+    wire       ex_eretn = id_ex_valid && id_ex_eretn;
+    wire       ex_return = ex_eret || ex_eretn;
+    wire [31:0] ex_return_pc = ex_eretn ? (SEPC + 32'd4) : SEPC;
+
+    exception_unit U_exception_unit(
+        .STATUS(STATUS),
+        .EX_SCAUSE(ex_scause),
+        .INTMASK(INTMASK),
+        .INT_PEND(ex_int_pending_for_unit),
+        .EXL_Set(ex_trap_set),
+        .INT_Signal(ex_int_signal),
+        .INT_PEND_ID(ex_int_pend_id),
+        .TRAP_CAUSE(ex_trap_cause),
+        .TRAP_VECTOR(ex_trap_vector)
+    );
+
+    // ---------------------------------------------------------------------
     // MEM 对外接口。所有外部副作用都必须受 valid 控制。
     //
     // Addr_out/Data_out/dm_ctrl 来自 EX/MEM，表示当前 MEM 阶段指令。
@@ -373,6 +474,11 @@ module SCPU(
     always @(negedge clk or posedge reset) begin
         if (reset) begin
             pc_reg <= 32'b0;
+            SEPC <= 32'b0;
+            SCAUSE <= `SCAUSE_NONE;
+            STATUS <= 8'b0;
+            INTMASK <= 8'b0;
+            int_pending <= 8'b0;
 
             if_id_valid <= 1'b0;
             if_id_pc <= 32'b0;
@@ -397,6 +503,10 @@ module SCPU(
             id_ex_branch <= 1'b0;
             id_ex_jal <= 1'b0;
             id_ex_jalr <= 1'b0;
+            id_ex_exception_valid <= 1'b0;
+            id_ex_exception_cause <= `SCAUSE_NONE;
+            id_ex_eret <= 1'b0;
+            id_ex_eretn <= 1'b0;
 
             ex_mem_valid <= 1'b0;
             ex_mem_alu_result <= 32'b0;
@@ -417,6 +527,9 @@ module SCPU(
             mem_wb_wd_sel <= `WDSel_FromALU;
             mem_wb_reg_write <= 1'b0;
         end else begin
+            if (INT)
+                int_pending[`INT_TIMER_BIT] <= 1'b1;
+
             // MEM/WB 每拍接收上一拍 MEM 阶段的结果。
             // 对 load 来说，Data_in 是板级 dm_controller 处理后的读数据；
             // 对非 load 指令，mem_wb_mem_data 会被写入但最终不会被 WDSel 选中。
@@ -427,6 +540,12 @@ module SCPU(
             mem_wb_rd <= ex_mem_rd;
             mem_wb_wd_sel <= ex_mem_wd_sel;
             mem_wb_reg_write <= ex_mem_reg_write;
+
+            if (ex_mem_valid && ex_mem_mem_write &&
+                (ex_mem_alu_result == `MMIO_INTMASK)) begin
+                INTMASK <= ex_mem_store_data[7:0];
+                int_pending <= 8'b0;
+            end
 
             // EX/MEM 接收当前 EX 阶段结果。branch 本身无外部副作用；
             // JAL/JALR 仍需继续流向 WB 写回 PC+4。
@@ -445,7 +564,99 @@ module SCPU(
             ex_mem_mem_write <= id_ex_mem_write;
             ex_mem_mem_read <= id_ex_mem_read;
 
-            if (ex_redirect) begin
+            if (ex_return) begin
+                // ERET/ERETN：从 trap 返回。返回指令本身没有副作用，
+                // 当前 EX/MEM 写 bubble，并清空更年轻的 IF/ID、ID/EX。
+                STATUS[`STATUS_EXL_BIT] <= 1'b0;
+                pc_reg <= ex_return_pc;
+
+                ex_mem_valid <= 1'b0;
+                ex_mem_alu_result <= 32'b0;
+                ex_mem_store_data <= 32'b0;
+                ex_mem_pc_plus4 <= 32'b0;
+                ex_mem_rd <= 5'b0;
+                ex_mem_dm_ctrl <= `dm_word;
+                ex_mem_wd_sel <= `WDSel_FromALU;
+                ex_mem_reg_write <= 1'b0;
+                ex_mem_mem_write <= 1'b0;
+                ex_mem_mem_read <= 1'b0;
+
+                if_id_valid <= 1'b0;
+                if_id_pc <= 32'b0;
+                if_id_inst <= NOP;
+
+                id_ex_valid <= 1'b0;
+                id_ex_pc <= 32'b0;
+                id_ex_rs1_data <= 32'b0;
+                id_ex_rs2_data <= 32'b0;
+                id_ex_imm <= 32'b0;
+                id_ex_rs1 <= 5'b0;
+                id_ex_rs2 <= 5'b0;
+                id_ex_rd <= 5'b0;
+                id_ex_funct3 <= 3'b0;
+                id_ex_alu_op <= `ALUOp_nop;
+                id_ex_dm_ctrl <= `dm_word;
+                id_ex_wd_sel <= `WDSel_FromALU;
+                id_ex_reg_write <= 1'b0;
+                id_ex_mem_write <= 1'b0;
+                id_ex_mem_read <= 1'b0;
+                id_ex_alu_src <= 1'b0;
+                id_ex_branch <= 1'b0;
+                id_ex_jal <= 1'b0;
+                id_ex_jalr <= 1'b0;
+                id_ex_exception_valid <= 1'b0;
+                id_ex_exception_cause <= `SCAUSE_NONE;
+                id_ex_eret <= 1'b0;
+                id_ex_eretn <= 1'b0;
+            end else if (ex_trap_set) begin
+                // 异常/中断：按课件在 EX 阶段响应，SEPC 记录当前 EX PC。
+                // 当前 EX 指令不能继续提交，因此 EX/MEM 写 bubble。
+                SEPC <= id_ex_pc;
+                SCAUSE <= ex_trap_cause;
+                STATUS[`STATUS_EXL_BIT] <= 1'b1;
+                if (ex_int_signal)
+                    int_pending[ex_int_pend_id] <= 1'b0;
+                pc_reg <= ex_trap_vector;
+
+                ex_mem_valid <= 1'b0;
+                ex_mem_alu_result <= 32'b0;
+                ex_mem_store_data <= 32'b0;
+                ex_mem_pc_plus4 <= 32'b0;
+                ex_mem_rd <= 5'b0;
+                ex_mem_dm_ctrl <= `dm_word;
+                ex_mem_wd_sel <= `WDSel_FromALU;
+                ex_mem_reg_write <= 1'b0;
+                ex_mem_mem_write <= 1'b0;
+                ex_mem_mem_read <= 1'b0;
+
+                if_id_valid <= 1'b0;
+                if_id_pc <= 32'b0;
+                if_id_inst <= NOP;
+
+                id_ex_valid <= 1'b0;
+                id_ex_pc <= 32'b0;
+                id_ex_rs1_data <= 32'b0;
+                id_ex_rs2_data <= 32'b0;
+                id_ex_imm <= 32'b0;
+                id_ex_rs1 <= 5'b0;
+                id_ex_rs2 <= 5'b0;
+                id_ex_rd <= 5'b0;
+                id_ex_funct3 <= 3'b0;
+                id_ex_alu_op <= `ALUOp_nop;
+                id_ex_dm_ctrl <= `dm_word;
+                id_ex_wd_sel <= `WDSel_FromALU;
+                id_ex_reg_write <= 1'b0;
+                id_ex_mem_write <= 1'b0;
+                id_ex_mem_read <= 1'b0;
+                id_ex_alu_src <= 1'b0;
+                id_ex_branch <= 1'b0;
+                id_ex_jal <= 1'b0;
+                id_ex_jalr <= 1'b0;
+                id_ex_exception_valid <= 1'b0;
+                id_ex_exception_cause <= `SCAUSE_NONE;
+                id_ex_eret <= 1'b0;
+                id_ex_eretn <= 1'b0;
+            end else if (ex_redirect) begin
                 // 预测失败：PC 改为真实目标，清空当前错误路径。
                 //
                 // 此时 IF 阶段已经按 PC+4 取了错误指令，ID 阶段也可能正在译码
@@ -475,6 +686,10 @@ module SCPU(
                 id_ex_branch <= 1'b0;
                 id_ex_jal <= 1'b0;
                 id_ex_jalr <= 1'b0;
+                id_ex_exception_valid <= 1'b0;
+                id_ex_exception_cause <= `SCAUSE_NONE;
+                id_ex_eret <= 1'b0;
+                id_ex_eretn <= 1'b0;
             end else if (stall_load_use) begin
                 // load-use 冒险：PC 和 IF/ID 保持，ID/EX 插入 bubble。
                 //
@@ -506,6 +721,10 @@ module SCPU(
                 id_ex_branch <= 1'b0;
                 id_ex_jal <= 1'b0;
                 id_ex_jalr <= 1'b0;
+                id_ex_exception_valid <= 1'b0;
+                id_ex_exception_cause <= `SCAUSE_NONE;
+                id_ex_eret <= 1'b0;
+                id_ex_eretn <= 1'b0;
             end else begin
                 // 正常推进。
                 //
@@ -536,6 +755,10 @@ module SCPU(
                 id_ex_branch <= id_is_branch;
                 id_ex_jal <= id_is_jal;
                 id_ex_jalr <= id_is_jalr;
+                id_ex_exception_valid <= id_exception_valid;
+                id_ex_exception_cause <= id_exception_cause;
+                id_ex_eret <= if_id_valid && id_is_eret;
+                id_ex_eretn <= if_id_valid && id_is_eretn;
             end
         end
     end

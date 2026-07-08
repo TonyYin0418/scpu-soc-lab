@@ -179,6 +179,42 @@ gtkwave build/sccomp_tb.vcd
 - Test-37 有 71 条机器指令。单周期版本可用 `PC=0x110` 且 `x10=0x7b2` 作为完成点；流水线版本不要依赖固定 PC 点，应以第一次写出 `dmem[0] <= 0x000007b2` 作为通过观察点，因为程序末尾会继续落入 `F_Test_JAL` 并循环覆盖 `dmem[0]`。
 - 修改测试程序后，必须重新独立推导预期寄存器和内存结果，不能用被测 RTL 生成标准答案。
 
+## 当前阶段：单级中断/异常分支
+
+- 当前工作分支为 `feature/interrupt-exception`，从 `main` 切出。`main` 已提交 `test: add board top simulation workflow`，包含 top 级 COE 仿真工具；中断/异常实现不要直接混入旧流水线里程碑提交。
+- 本阶段不实现 8259，不实现嵌套中断；按课件实现单级中断/异常。
+- 当前实现范围：
+  - 非法指令异常，`SCAUSE=8'h01`，向量入口 `0x00000300`；
+  - `ECALL/SYSCALL`，`SCAUSE=8'h02`，向量入口 `0x00000320`；
+  - 计时中断，`SCAUSE=8'h06`，向量入口 `0x00000340`；
+  - `SEPC` 保存进入 trap 时当前 EX 阶段 PC；
+  - `STATUS[0]` 表示正在 trap 中；
+  - `INTMASK[6]` 控制计时中断允许；
+  - `ERET=32'h00100073` 返回 `SEPC`；
+  - `ERETN=32'h00200073` 返回 `SEPC+4`；
+  - 暂不实现 `MRET`，除非后续老师明确要求。
+- `INTMASK` 复位为 0，避免普通程序被 `Counter_x`/`INT` 意外打断。软件可向 `0xFFFF_FF00` 写低 8 位更新 `INTMASK`；写入时清空 pending。
+- `rtl/exception_unit.v` 是新增异常控制模块。新增 RTL 必须同步 `files.f`、`board_own_files.f`、`board_own_deps.f`、`top_board_sim_files.f`。
+- `coe/board/I_trap_test.coe` 是中断/异常专用 top 仿真程序。预期输出：
+
+```text
+11110000 -> e0000002 -> 22220000 -> e0000001 -> 33330000 -> e0000006 -> 44440000
+```
+
+- top 仿真命令：
+
+```bash
+python3 sim/run_top_board_sim.py \
+  --imem coe/board/I_trap_test.coe \
+  --sw 0000 \
+  --max-cycles 2000 \
+  --force-int-start 80 \
+  --force-int-end 90
+```
+
+- `--force-int-start/end` 只用于仿真强制产生一次 timer INT；上板阶段应改用计数器外设产生 `SCPU.INT`。
+- 用户提供的老师 `MIO_BUS.v` 已整理为 `docs/reference/MIO_BUS_reference.v`，只作地址译码参考，不得加入任何 filelist，避免与 `edf/MIO_BUS.V` 或仿真模型重复定义。
+
 ## 当前阶段：老师 EDF 板级系统
 
 - `board/top.v` 是当前 Vivado 顶层，连接老师的 `SCPU.edf`、`MIO_BUS.edf`、`SPIO.edf`、`Multi_8CH32.edf`、`SSeg7.edf`、自研 `rtl/dm_controller.v` 以及 `IO/` 中的 RTL。当前不再使用老师提供的 `edf/dm_controller.edf` 或其 stub 参与构建。
