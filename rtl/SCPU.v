@@ -8,6 +8,12 @@
 // 2. 分支和跳转在 EX 阶段决定；预测错误时清空 IF/ID、ID/EX。
 // 3. 流水线寄存器和 PC 在下降沿更新，寄存器堆沿用教材假设在上升沿写回。
 // 4. 当前阶段不实现 MIO_ready/INT，中断异常留给后续阶段。
+//
+// 时钟关系：
+// - 本模块输入 clk 是板级 Clk_CPU，当前由 clkdiv[0] 经 BUFG 得到 50 MHz。
+// - PC 和所有流水线寄存器在 negedge clk 更新，即“阶段推进”发生在下降沿。
+// - RF 模块在 posedge clk 写回，读端口是异步组合读。
+// - 这样 WB 写 RF 和 ID 读 RF 错开半个周期，便于同周期写回值被 ID 读到。
 module SCPU(
     input             clk,
     input             reset,
@@ -24,8 +30,12 @@ module SCPU(
     input             INT
 );
 
+    // RISC-V 标准 NOP：addi x0, x0, 0。
+    // flush / bubble 时把指令内容置成 NOP，同时 valid=0 屏蔽副作用。
     localparam [31:0] NOP = 32'h0000_0013;
 
+    // 只用 opcode 快速判断指令大类。具体 ALUOp / WDSel / dm_ctrl
+    // 仍由原来的 ctrl.v 统一生成，避免在流水线顶层重复写完整译码。
     localparam [6:0] OP_LOAD   = 7'b0000011;
     localparam [6:0] OP_IMM    = 7'b0010011;
     localparam [6:0] OP_AUIPC  = 7'b0010111;
@@ -37,16 +47,25 @@ module SCPU(
     localparam [6:0] OP_JAL    = 7'b1101111;
 
     // 当前 37 条指令阶段暂不使用 MIO ready/中断。
+    // 端口保留是为了兼容老师 SCPU.edf 的板级接口。
     assign CPU_MIO = 1'b0;
 
     // ---------------------------------------------------------------------
     // IF：PC 寄存器。ROM 地址直接来自 PC_out。
+    //
+    // PC_out 接到板级 ROM_D 的地址 PC[11:2]，因此 pc_reg 改变后，
+    // 外部指令 ROM 组合输出 inst_in。下一次 negedge 时，inst_in 会被
+    // 锁存进 IF/ID，成为 ID 阶段要译码的指令。
     // ---------------------------------------------------------------------
     reg [31:0] pc_reg;
     assign PC_out = pc_reg;
 
     // ---------------------------------------------------------------------
     // IF/ID 流水寄存器。
+    //
+    // valid：这一槽里是否真有一条有效指令。flush 后 valid=0，表示 bubble。
+    // pc   ：这条指令自己的 PC，后面 branch/jump 目标计算和 AUIPC 需要。
+    // inst ：从 ROM 取到的 32 位指令，ID 阶段根据它译码。
     // ---------------------------------------------------------------------
     reg        if_id_valid;
     reg [31:0] if_id_pc;
@@ -54,6 +73,11 @@ module SCPU(
 
     // ---------------------------------------------------------------------
     // ID 阶段译码与寄存器读取。
+    //
+    // ID 的输入来自 IF/ID。这里完成三件事：
+    // 1. 从指令字段中拆出 opcode/rs1/rs2/rd/funct/立即数字段；
+    // 2. 调用 ctrl/EXT 生成后续阶段需要的控制信号和扩展立即数；
+    // 3. 用 rs1/rs2 异步读取寄存器堆，读数在下一次 negedge 写入 ID/EX。
     // ---------------------------------------------------------------------
     wire [6:0] id_op     = if_id_inst[6:0];
     wire [6:0] id_funct7 = if_id_inst[31:25];
@@ -62,6 +86,8 @@ module SCPU(
     wire [4:0] id_rs2    = if_id_inst[24:20];
     wire [4:0] id_rd     = if_id_inst[11:7];
 
+    // 各类立即数字段先按原始指令位拼好，再交给 EXT 根据 EXTOp 做
+    // 符号扩展、零扩展或最低位补 0。
     wire [4:0]  id_iimm_shamt = if_id_inst[24:20];
     wire [11:0] id_iimm       = if_id_inst[31:20];
     wire [11:0] id_simm       = {if_id_inst[31:25], if_id_inst[11:7]};
@@ -75,7 +101,6 @@ module SCPU(
     wire        id_mem_write;
     wire [5:0]  id_ext_op;
     wire [4:0]  id_alu_op;
-    wire [2:0]  id_unused_npc_op;
     wire        id_alu_src;
     wire [1:0]  id_wd_sel;
     wire [2:0]  id_dm_ctrl;
@@ -84,18 +109,18 @@ module SCPU(
     wire [31:0] id_rd2;
     wire [31:0] unused_debug_data;
 
-    // ctrl 中 branch 的 NPCOp 依赖 Zero；流水线在 EX 阶段自行处理 PC，
-    // 因此这里给 Zero=0，只复用其 RegWrite/MemWrite/ALU/EXT/DM 控制。
+    // ctrl 只负责“译码得到控制信号”。
+    // PC+4、branch/jal/jalr 的 PC 重定向由本模块 EX 阶段自行处理，
+    // 因此 ctrl 不再包含单周期时代的 Zero/NPCOp 接口。
+    // id_reg_write/id_mem_write/id_alu_op/id_wd_sel 等随指令一起进入 ID/EX、EX/MEM、MEM/WB，到对应阶段才使用。
     ctrl U_ctrl(
         .Op(id_op),
         .Funct7(id_funct7),
         .Funct3(id_funct3),
-        .Zero(1'b0),
         .RegWrite(id_reg_write),
         .MemWrite(id_mem_write),
         .EXTOp(id_ext_op),
         .ALUOp(id_alu_op),
-        .NPCOp(id_unused_npc_op),
         .ALUSrc(id_alu_src),
         .WDSel(id_wd_sel),
         .DMType(id_dm_ctrl)
@@ -113,6 +138,11 @@ module SCPU(
     );
 
     // WB 阶段写回寄存器堆；读端口服务当前 ID 阶段。
+    //
+    // RF 的 A1/A2 使用当前 ID 指令的 rs1/rs2。
+    // RF 的 A3/WD/RFWr 来自当前 WB 阶段。
+    // 因为 RF 在 posedge 写、流水线在 negedge 推进，所以 WB 写回后，
+    // ID 阶段还有半个周期让异步读输出稳定到 id_rd1/id_rd2。
     wire        wb_reg_write;
     wire [4:0]  wb_rd;
     wire [31:0] wb_data;
@@ -131,6 +161,9 @@ module SCPU(
         .debug_data(unused_debug_data)
     );
 
+    // 这些布尔信号只用于流水线控制：
+    // - load/store/branch/jal/jalr 决定是否需要特殊处理；
+    // - id_uses_rs1/rs2 用于 load-use hazard 判断，避免把无关字段误当源寄存器。
     wire id_is_load   = (id_op == OP_LOAD);
     wire id_is_store  = (id_op == OP_STORE);
     wire id_is_branch = (id_op == OP_BRANCH);
@@ -150,6 +183,12 @@ module SCPU(
 
     // ---------------------------------------------------------------------
     // ID/EX 流水寄存器。
+    // - 数据：pc、rs1_data、rs2_data、imm；
+    // - 编号：rs1/rs2/rd，用于 forwarding/hazard/writeback；
+    // - 控制：ALUOp、ALUSrc、RegWrite、MemWrite、WDSel、dm_ctrl 等。
+    //
+    // 为什么控制信号也要存：一条指令进入后续阶段后，原始 inst 已经不在
+    // 当前 ID 阶段了，后续阶段必须依靠随指令携带的控制信号决定行为。
     // ---------------------------------------------------------------------
     reg        id_ex_valid;
     reg [31:0] id_ex_pc;
@@ -173,6 +212,11 @@ module SCPU(
 
     // ---------------------------------------------------------------------
     // EX/MEM 流水寄存器。
+    // - alu_result：load/store 地址、ALU 指令结果、部分跳转目标计算结果；
+    // - store_data：store 指令最终要写到内存/外设的数据，已经做过 forwarding；
+    // - pc_plus4：JAL/JALR 写回 rd 的值；
+    // - rd 和写回控制继续传给 WB；
+    // - MemWrite/dm_ctrl 在 MEM 阶段驱动外部 RAM/MMIO。
     // ---------------------------------------------------------------------
     reg        ex_mem_valid;
     reg [31:0] ex_mem_alu_result;
@@ -187,6 +231,13 @@ module SCPU(
 
     // ---------------------------------------------------------------------
     // MEM/WB 流水寄存器。
+    //
+    // MEM/WB 是“进入 WB 阶段的指令包”：
+    // - mem_data：load 从 Data_in 采样到的数据；
+    // - alu_result：ALU 类 / LUI / AUIPC 等结果；
+    // - pc_plus4：JAL/JALR 写回值；
+    // - WDSel：选择最终写回 RF 的来源；
+    // - RegWrite/rd：决定是否真的写 RF，以及写哪个寄存器。
     // ---------------------------------------------------------------------
     reg        mem_wb_valid;
     reg [31:0] mem_wb_alu_result;
@@ -198,6 +249,12 @@ module SCPU(
 
     // ---------------------------------------------------------------------
     // 冒险处理与转发。
+    //
+    // 数据冒险有两类：
+    // 1. ALU 类结果已经在 EX/MEM 或 MEM/WB 中，但 RF 还没写回：用 forwarding。
+    // 2. load 紧跟使用者：load 数据到 MEM/WB 才可用，必须 stall 一拍。
+    //
+    // 这里的 stall_load_use 只处理第二类；第一类由 forward_unit 选择操作数来源。
     // ---------------------------------------------------------------------
     wire stall_load_use;
     wire [1:0] forward_a_sel;
@@ -229,9 +286,14 @@ module SCPU(
         .forward_b(forward_b_sel)
     );
 
+    // EX/MEM 可转发的数据只可能来自 ALU 结果或 PC+4。
+    // load 数据在 EX/MEM 阶段尚未从 Data_in 采样，所以 forward_unit 会禁止
+    // ex_mem_mem_read 的转发，load-use 通过 stall 解决。
     wire [31:0] ex_mem_forward_data =
         (ex_mem_wd_sel == `WDSel_FromPC) ? ex_mem_pc_plus4 : ex_mem_alu_result;
 
+    // EX 阶段真正送入 ALU/分支比较的 rs1/rs2。
+    // 优先级：EX/MEM 最新，其次 MEM/WB，最后使用 ID/EX 中保存的原始读数。
     wire [31:0] ex_rs1_forwarded =
         (forward_a_sel == 2'b10) ? ex_mem_forward_data :
         (forward_a_sel == 2'b01) ? wb_data :
@@ -242,6 +304,8 @@ module SCPU(
         (forward_b_sel == 2'b01) ? wb_data :
                                    id_ex_rs2_data;
 
+    // ALU B 端：I/load/store/jalr 等使用立即数；R/branch 使用 rs2。
+    // store_data 不走 ex_alu_b，而是单独把 forwarded rs2 保存到 EX/MEM。
     wire [31:0] ex_alu_b = id_ex_alu_src ? id_ex_imm : ex_rs2_forwarded;
     wire [31:0] ex_alu_result;
     wire        ex_zero;
@@ -255,6 +319,10 @@ module SCPU(
         .PC(id_ex_pc)
     );
 
+    // 分支/跳转在 EX 阶段决定。
+    // 静态预测为 not taken，也就是 IF 阶段一直先取 PC+4。
+    // 如果 EX 阶段发现 branch taken 或 jal/jalr，就把 PC 改成真实目标，
+    // 并清空此时已经错误取到/译码的 IF/ID、ID/EX。
     wire        ex_branch_taken = id_ex_valid && id_ex_branch && ex_zero;
     wire        ex_jump_taken   = id_ex_valid && (id_ex_jal || id_ex_jalr);
     wire        ex_redirect     = ex_branch_taken || ex_jump_taken;
@@ -264,6 +332,10 @@ module SCPU(
 
     // ---------------------------------------------------------------------
     // MEM 对外接口。所有外部副作用都必须受 valid 控制。
+    //
+    // Addr_out/Data_out/dm_ctrl 来自 EX/MEM，表示当前 MEM 阶段指令。
+    // mem_w 必须额外与 ex_mem_valid 相与：如果这一级是 bubble 或被 flush，
+    // 即使控制信号残留，也不能写 RAM/MMIO。
     // ---------------------------------------------------------------------
     assign mem_w    = ex_mem_valid && ex_mem_mem_write;
     assign Addr_out = ex_mem_alu_result;
@@ -272,6 +344,10 @@ module SCPU(
 
     // ---------------------------------------------------------------------
     // WB 阶段写回选择。
+    //
+    // WDSel_FromMEM：load 指令写回 Data_in 采样值；
+    // WDSel_FromPC ：JAL/JALR 写回 PC+4；
+    // 默认 FromALU ：ALU/LUI/AUIPC 等写回 ALU 结果。
     // ---------------------------------------------------------------------
     assign wb_data =
         (mem_wb_wd_sel == `WDSel_FromMEM) ? mem_wb_mem_data :
@@ -284,6 +360,15 @@ module SCPU(
     // ---------------------------------------------------------------------
     // 下降沿推进流水线。flush 优先于普通取指，stall 只冻结 PC 和 IF/ID，
     // 并在 ID/EX 插入 bubble。
+    //
+    // 本 always 块是整个流水线的“写寄存器”位置：
+    // - reset：所有 valid 清 0，PC 清 0；
+    // - 普通推进：每级接收上一级组合逻辑计算好的结果；
+    // - ex_redirect：分支/跳转预测失败，改 PC，并清空错误路径；
+    // - stall_load_use：load-use，PC/IF_ID 保持，ID_EX 写 bubble。
+    //
+    // 这里使用非阻塞赋值 <=，保证同一个 negedge 内所有流水线寄存器
+    // 同时基于“边沿前”的旧值更新，不会出现顺序覆盖。
     // ---------------------------------------------------------------------
     always @(negedge clk or posedge reset) begin
         if (reset) begin
@@ -333,6 +418,8 @@ module SCPU(
             mem_wb_reg_write <= 1'b0;
         end else begin
             // MEM/WB 每拍接收上一拍 MEM 阶段的结果。
+            // 对 load 来说，Data_in 是板级 dm_controller 处理后的读数据；
+            // 对非 load 指令，mem_wb_mem_data 会被写入但最终不会被 WDSel 选中。
             mem_wb_valid <= ex_mem_valid;
             mem_wb_alu_result <= ex_mem_alu_result;
             mem_wb_mem_data <= Data_in;
@@ -343,6 +430,10 @@ module SCPU(
 
             // EX/MEM 接收当前 EX 阶段结果。branch 本身无外部副作用；
             // JAL/JALR 仍需继续流向 WB 写回 PC+4。
+            //
+            // 注意这里无论后面是否 ex_redirect，当前 ID/EX 中的指令本身已经
+            // 到了 EX 阶段，不能被当作错误路径清掉。需要清的是更年轻的
+            // IF/ID 和 ID/EX 下一拍内容。
             ex_mem_valid <= id_ex_valid;
             ex_mem_alu_result <= ex_alu_result;
             ex_mem_store_data <= ex_rs2_forwarded;
@@ -356,6 +447,9 @@ module SCPU(
 
             if (ex_redirect) begin
                 // 预测失败：PC 改为真实目标，清空当前错误路径。
+                //
+                // 此时 IF 阶段已经按 PC+4 取了错误指令，ID 阶段也可能正在译码
+                // 错误路径指令，所以 IF/ID 和 ID/EX 都写 bubble。
                 pc_reg <= ex_redirect_pc;
 
                 if_id_valid <= 1'b0;
@@ -383,6 +477,10 @@ module SCPU(
                 id_ex_jalr <= 1'b0;
             end else if (stall_load_use) begin
                 // load-use 冒险：PC 和 IF/ID 保持，ID/EX 插入 bubble。
+                //
+                // 例：lw x1,0(x2); add x3,x1,x4
+                // add 已经在 IF/ID，但 lw 的数据还没到 WB。保持 IF/ID 可以让
+                // add 下一拍重新进入 ID；ID/EX 插入 bubble 给 lw 多一拍到 MEM/WB。
                 pc_reg <= pc_reg;
 
                 if_id_valid <= if_id_valid;
@@ -410,6 +508,9 @@ module SCPU(
                 id_ex_jalr <= 1'b0;
             end else begin
                 // 正常推进。
+                //
+                // IF/ID 捕获当前 PC 和 ROM 输出 inst_in；
+                // ID/EX 捕获当前 ID 阶段已经译码/读寄存器得到的所有信息。
                 pc_reg <= pc_reg + 32'd4;
 
                 if_id_valid <= 1'b1;

@@ -156,6 +156,80 @@ PASS
 
 注意：只看到 `vvp` 进程退出不代表测试通过，必须同时检查终端的 `[通过]` 和 `build/results.txt` 的 `PASS`。
 
+### 4.4 板级 top 动态仿真：从 COE 观察数码管显示
+
+如果目标是观察 `board/top.v` 级别的显示输出，而不是只跑 CPU 自检，使用专用脚本：
+
+```bash
+python3 sim/run_top_board_sim.py \
+  --imem coe/board/I_testac.coe \
+  --dmem coe/board/D_mem.coe \
+  --sw 0000 \
+  --max-cycles 4200000
+```
+
+脚本会自动完成：
+
+1. 将 `.coe` 的 `memory_initialization_vector` 转成 `build/top_imem.dat` / `build/top_dmem.dat`。
+2. 用 `top_board_sim_files.f` 编译 `board/top.v` 级仿真。
+3. 运行 `sim/top_board_tb.v`，打印程序写显示 MMIO 和当前 `Disp_num`。
+4. 如指定 `--dump-vcd`，生成波形 `build/top_board_tb.vcd`。
+
+输出中重点看两类行：
+
+```text
+[TOP_SIM] cycle=33 pc=00000268 display_write=00111100
+[TOP_SIM] cycle=35 pc=0000026c sevenseg_hex=00111100 an=fb seg=f9
+```
+
+- `display_write`：CPU 写入显示 MMIO 地址 `0xE0000000` 的 32 位值，是判断“数码管理论显示内容”的最可靠事件。
+- `sevenseg_hex`：当前 `Multi_8CH32` 送入 `SSeg7` 的 8 位十六进制显示值。`--sw 0000` 表示 `SW[7:5]=000`，选择程序输出通道 `data0`。
+- `an` / `seg`：动态扫描数码管的即时段选/位选信号，适合在 GTKWave 中看波形，不适合直接肉眼读完整八位数。
+
+例如 `I_testac.coe` 当前 top 仿真可看到：
+
+```text
+00111100
+00222200
+00333300
+00444400
+00555500
+00666600
+ffffffff
+ffefffff
+```
+
+这说明六个阶段标记已通过 top 级数据通路写到显示外设，并进入成功动画。`ffffffff` 是动画第一帧，下一帧 `ffefffff` 大约要等到 cycle 3886493；这是测试程序里的软件延时，不是 CPU 卡死。完整动画每帧间隔较长，top 仿真通常只看前几帧即可，实板观察为最终准则。
+
+默认不 dump VCD，文本输出速度更快；需要波形时追加：
+
+```bash
+python3 sim/run_top_board_sim.py \
+  --imem coe/board/I_testac.coe \
+  --dmem coe/board/D_mem.coe \
+  --sw 0000 \
+  --max-cycles 4200000 \
+  --dump-vcd
+```
+
+top 仿真中的 `MIO_BUS`、`RAM_B`、`Multi_8CH32`、`SSeg7` 是 `sim/board_sim_models.v` 提供的行为模型，不是老师 EDF/IP 的逐门级模型。
+
+普通板级 IO 程序也可以这样跑：
+
+```bash
+python3 sim/run_top_board_sim.py \
+  --imem coe/board/I_mem.coe \
+  --dmem coe/board/D_mem.coe \
+  --sw 0000 \
+  --max-cycles 200000
+```
+
+查看 top 级波形：
+
+```bash
+open -a GTKWave build/top_board_tb.vcd
+```
+
 ## 5. 查看波形
 
 命令行安装的 GTKWave：

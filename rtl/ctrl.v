@@ -7,13 +7,11 @@ module ctrl(
     input      [6:0] Op,
     input      [6:0] Funct7,
     input      [2:0] Funct3,
-    input            Zero,
 
     output reg       RegWrite,
     output reg       MemWrite,
     output reg [5:0] EXTOp,
     output reg [4:0] ALUOp,
-    output reg [2:0] NPCOp,
     output reg       ALUSrc,
     output reg [1:0] WDSel,
     output reg [2:0] DMType
@@ -35,7 +33,6 @@ module ctrl(
         MemWrite = 1'b0;
         EXTOp    = `EXT_CTRL_ITYPE;
         ALUOp    = `ALUOp_nop;
-        NPCOp    = `NPC_PLUS4;
         ALUSrc   = 1'b0;
         WDSel    = `WDSel_FromALU;
         DMType   = `dm_word;
@@ -117,7 +114,8 @@ module ctrl(
             end
 
             OP_BRANCH: begin
-                // ALU 将“分支条件成立”统一编码为 Zero=1。
+                // 这里只产生分支比较所需的 ALUOp。
+                // 是否真的跳转由流水线 EX 阶段根据 ALU Zero 自行判断。
                 EXTOp = `EXT_CTRL_BTYPE;
                 case (Funct3)
                     3'b000: ALUOp = `ALUOp_sub;  // BEQ
@@ -128,8 +126,6 @@ module ctrl(
                     3'b111: ALUOp = `ALUOp_bgeu; // BGEU
                     default: ALUOp = `ALUOp_nop;
                 endcase
-                if (Zero)
-                    NPCOp = `NPC_BRANCH;
             end
 
             OP_LUI: begin
@@ -149,7 +145,6 @@ module ctrl(
             OP_JAL: begin
                 RegWrite = 1'b1;
                 EXTOp    = `EXT_CTRL_JTYPE;
-                NPCOp    = `NPC_JUMP;
                 WDSel    = `WDSel_FromPC;
             end
 
@@ -159,7 +154,6 @@ module ctrl(
                     ALUSrc   = 1'b1;
                     EXTOp    = `EXT_CTRL_ITYPE;
                     ALUOp    = `ALUOp_add;
-                    NPCOp    = `NPC_JALR;
                     WDSel    = `WDSel_FromPC;
                 end
             end
