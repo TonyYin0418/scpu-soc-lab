@@ -12,6 +12,8 @@
 
 当前正在 `feature/pipeline-cpu` 分支推进 70–80 分阶段。该分支采用方案 B：`rtl/SCPU.v` 直接作为五级冒险流水线 CPU，单周期版本通过 `main` 分支和历史 commit 保留。流水线第一版已经通过 Icarus 的 Test-8、AUIPC 补测、Test-37，以及 `board/top.v` 端口级编译检查；实板测试中发现直接使用 `clkdiv[x]` 驱动 CPU 会因未走全局时钟网络产生不稳定现象，已改为 `clkdiv[0] -> BUFG -> Clk_CPU`，当前 50 MHz 下 `testac.coe` 可进入成功动画。
 
+当前 `feature/ps2-keyboard` 分支在已提交的单级中断/异常版本基础上接入 PS/2 键盘。老师提供的 PS2 文件已整理到 `IO/PS2/`；板级系统改用自写 `IO/MIO_BUS.v`，新增 `0xD0000000`/`0xD0000004` 键盘 MMIO 地址，同时保留原 RAM、数码管和 LED 地址行为。
+
 所有命令默认在项目根目录 `SCPU_SOC` 中执行。
 
 ## 2. 环境检查
@@ -47,8 +49,8 @@ iverilog -g2012 -Wall -s sccomp_tb -o build/simv -f files.f
     "rtl/*.v",
     "rtl/*.vh",
     "IO/*.v",
+    "IO/PS2/*.v",
     "editor/*.v",
-    "edf/MIO_BUS.V",
     "edf/SPIO.v",
     "edf/Multi_8CH32.v",
     "edf/SSeg7.v",
@@ -60,7 +62,7 @@ iverilog -g2012 -Wall -s sccomp_tb -o build/simv -f files.f
 
 `indexGlobs` 是旧字段，但 native `slang-server 0.2.7` 仍支持，且当前项目实测最稳定。使用它的原因是：
 
-- `edf/MIO_BUS.V` 是大写 `.V`，普通目录索引容易漏掉。
+- 当前 `MIO_BUS` 已改为自写 `IO/MIO_BUS.v`，用于加入 PS/2 键盘 MMIO；不要再把 `edf/MIO_BUS.V` 加回 `board_own_files.f`。
 - 不能直接索引整个 `edf/` 目录，否则可能同时看到老师 `edf/SCPU.v` 和自研 `rtl/SCPU.v`，造成同名模块混乱。
 - `flags` 中必须包含 `-f board_own_files.f`，否则打开 `board/top.v` 时可能能消除部分红线但无法稳定 Go to Definition。
 
@@ -94,7 +96,7 @@ slang-server version 0.2.7+50b2661
 4. 执行 **Developer: Reload Window**。
 5. 执行 **Verilog: Restart slang-server**。
 6. 执行 **Verilog: Doctor**，确认 `runtime = native`、`state = running`、`build = board_own_files.f`。
-7. 在 `board/top.v` 中对 `SCPU`、`clk_div`、`MIO_BUS` 右键 Go to Definition。当前已验证应分别跳到 `rtl/SCPU.v`、`IO/clk_div.v`、`edf/MIO_BUS.V`。
+7. 在 `board/top.v` 中对 `SCPU`、`clk_div`、`MIO_BUS`、`PS2IO` 右键 Go to Definition。当前已验证应分别跳到 `rtl/SCPU.v`、`IO/clk_div.v`、`IO/MIO_BUS.v`、`IO/PS2/PS2IO.v`。
 
 如果 Doctor 显示还在使用 WASM，或 `build` 不是 `board_own_files.f`，优先修正 native runtime 和 `.slang/server.json`，不要退回旧的 `board_own_deps.f` 方案。
 
@@ -275,6 +277,57 @@ display_write=44440000  # 中断返回后继续
 
 注意：不要并行运行两个 `sim/run_top_board_sim.py`，默认都会编译到 `build/top_board_simv`，并行写同一个 vvp 文件会导致 `unresolved label` 等无效错误。
 
+### 4.6 PS/2 键盘 MMIO top 仿真
+
+当前 `feature/ps2-keyboard` 分支已接入老师提供的 PS/2 接口文件，并整理为：
+
+```text
+IO/PS2/PS2KB.v
+IO/PS2/PS2IO.v
+```
+
+板级顶层新增端口：
+
+```verilog
+inout ps2_clk,
+inout ps2_data
+```
+
+地址映射由自写 `IO/MIO_BUS.v` 实现：
+
+```text
+0xD0000000  读 {23'b0, ps2_ready, ps2_key}
+0xD0000004  读最近 4 个扫描码拼成的 ps2_scancode
+0xE0000000  写数码管显示 MMIO，读 BTN/SW
+0xF0000000  写 LED/SPIO，读 LED 状态
+```
+
+PS/2 smoke 测试程序：
+
+```text
+coe/board/I_ps2_mmio_smoke.coe
+```
+
+该程序轮询 `0xD0000000` 的 ready 位，读到键值后写到 `0xE0000000`。仿真命令：
+
+```bash
+python3 sim/run_top_board_sim.py \
+  --imem coe/board/I_ps2_mmio_smoke.coe \
+  --sw 0000 \
+  --max-cycles 100000 \
+  --send-ps2-key 1c
+```
+
+预期关键输出：
+
+```text
+[TOP_SIM] send PS2 scan code=1c
+display_write=0000011c
+```
+
+含义：仿真 testbench 通过 PS/2 串行时序发送扫描码 `0x1c`，CPU 从 `0xD0000000` 读到 `{ready=1,key=0x1c}`，然后显示 `0000011c`。
+程序最后会停在自循环中，后续出现 `[TOP_SIM][TIMEOUT] ... display=0000011c` 是预期现象；判断是否通过看前面是否出现 `display_write=0000011c`。
+
 ## 5. 查看波形
 
 命令行安装的 GTKWave：
@@ -329,15 +382,17 @@ board/top.v
 IO/Enter.v
 IO/clk_div.v
 IO/Counter_3_IO.v
+IO/MIO_BUS.v
+IO/PS2/PS2KB.v
+IO/PS2/PS2IO.v
 edf/SCPU.edf
-edf/MIO_BUS.edf
 rtl/dm_controller.v
 edf/SPIO.edf
 edf/Multi_8CH32.edf
 edf/SSeg7.edf
 ```
 
-`edf/*.v` 是网表接口 stub，主要供编辑器和接口检查使用。若 Vivado 已能从 EDF 正确识别端口，不必再把 stub 加入综合；不要添加 `rtl/SCPU.v`，否则会与老师的 `SCPU.edf` 重名。不要添加 `edf/dm_controller.edf` 或 `edf/dm_controller.v`，当前 RAM 字节写使能和读数据扩展由自研 `rtl/dm_controller.v` 实现。也不要添加 `sim/sccomp_tb.v`。
+`edf/*.v` 是网表接口 stub，主要供编辑器和接口检查使用。若 Vivado 已能从 EDF 正确识别端口，不必再把 stub 加入综合；不要添加 `rtl/SCPU.v`，否则会与老师的 `SCPU.edf` 重名。不要添加 `edf/MIO_BUS.edf`，当前为了 PS/2 键盘地址映射已改用自写 `IO/MIO_BUS.v`。不要添加 `edf/dm_controller.edf` 或 `edf/dm_controller.v`，当前 RAM 字节写使能和读数据扩展由自研 `rtl/dm_controller.v` 实现。也不要添加 `sim/sccomp_tb.v`。
 
 `editor/ip_stubs.v` 只用于 VS Code/slang 和 Icarus 的端口检查，不得加入 Vivado Design Sources；Vivado 使用 IP Catalog 实际生成的 `ROM_D`、`RAM_B`。
 
@@ -386,7 +441,7 @@ edf/SSeg7.edf
 
 ### 7.5 XDC、综合与下载
 
-1. 将 `constraints/icf.xdc` 添加为 Constraints Source。
+1. 将 `constraints/icf.xdc` 添加为 Constraints Source。当前 XDC 已包含 `ps2_clk`、`ps2_data` 端口约束；如果暂时不接键盘，也可以保留这两个端口和约束，不影响原测试程序运行。
 2. 检查 `clk` 的周期约束为 10 ns；不要把约束改成 CPU 分频后的周期。
 3. 依次执行 **Run Synthesis → Run Implementation → Report Timing Summary**。
 4. 确认没有 unconstrained top-level port、unresolved black box、关键 DRC 或负的 setup slack 后，再执行 **Generate Bitstream**。
@@ -517,7 +572,9 @@ rtl/ctrl_encode_def.v
 3. 保持以下外围不变：
 
 ```text
-edf/MIO_BUS.edf
+IO/MIO_BUS.v
+IO/PS2/PS2KB.v
+IO/PS2/PS2IO.v
 rtl/dm_controller.v
 edf/SPIO.edf
 edf/Multi_8CH32.edf

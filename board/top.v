@@ -7,6 +7,8 @@ module top(
     input             rstn,
     input      [15:0] sw_i,
     input      [4:0]  btn_i,
+    inout             ps2_clk,
+    inout             ps2_data,
     output     [15:0] led_o,
     output     [7:0]  disp_an_o,
     output     [7:0]  disp_seg_o
@@ -87,6 +89,26 @@ module top(
     wire [31:0] Peripheral_in;
     wire [31:0] counter_out;
     wire [15:0] LED_out;
+    wire [7:0]  ps2_key;
+    wire [7:0]  ps2_testkey;
+    wire [31:0] ps2_scancode;
+    wire        ps2_ready;
+    wire        ps2_read;
+
+    // PS/2 键盘外设。
+    // CPU 读取 0xD0000000 时，MIO_BUS 拉高 ps2_read，读取当前扫描码并清 ready。
+    PS2IO U11_PS2IO(
+        .io_read_clk(Clk_IO),
+        .clk        (clk),
+        .rst        (rst),
+        .PS2C       (ps2_clk),
+        .PS2D       (ps2_data),
+        .RD         (ps2_read),
+        .testkey    (ps2_testkey),
+        .Scancode   (ps2_scancode),
+        .key        (ps2_key),
+        .PS2Ready   (ps2_ready)
+    );
 
     MIO_BUS U4_MIO_BUS(
         .clk(clk),
@@ -103,6 +125,9 @@ module top(
         .counter0_out(counter0_OUT),
         .counter1_out(counter1_OUT),
         .counter2_out(counter2_OUT),
+        .ps2_key(ps2_key),
+        .ps2_scancode(ps2_scancode),
+        .ps2_ready(ps2_ready),
         .Cpu_data4bus(Cpu_data4bus),
         .ram_data_in(ram_data_in),
         .ram_addr(ram_addr),
@@ -110,7 +135,8 @@ module top(
         .GPIOf0000000_we(GPIOf0000000_we),
         .GPIOe0000000_we(GPIOe0000000_we),
         .counter_we(counter_we),
-        .Peripheral_in(Peripheral_in)
+        .Peripheral_in(Peripheral_in),
+        .ps2_read(ps2_read)
     );
 
     // data_ram_we 是 MIO_BUS 的旧版兼容输出；本原理图由 dm_controller

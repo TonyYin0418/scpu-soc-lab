@@ -12,6 +12,10 @@ module top_board_tb;
     reg         rstn;
     reg  [15:0] sw_i;
     reg  [4:0]  btn_i;
+    tri1        ps2_clk;
+    tri1        ps2_data;
+    reg         ps2_clk_drive_low;
+    reg         ps2_data_drive_low;
     wire [15:0] led_o;
     wire [7:0]  disp_an_o;
     wire [7:0]  disp_seg_o;
@@ -24,6 +28,7 @@ module top_board_tb;
     integer dump_vcd;
     integer force_int_start;
     integer force_int_end;
+    integer send_ps2_key;
     integer sw_value;
     integer saw_1111;
     integer saw_2222;
@@ -36,11 +41,16 @@ module top_board_tb;
     reg [1023:0] imem_file;
     reg [1023:0] dmem_file;
 
+    assign ps2_clk  = ps2_clk_drive_low  ? 1'b0 : 1'bz;
+    assign ps2_data = ps2_data_drive_low ? 1'b0 : 1'bz;
+
     top U_TOP(
         .clk(clk),
         .rstn(rstn),
         .sw_i(sw_i),
         .btn_i(btn_i),
+        .ps2_clk(ps2_clk),
+        .ps2_data(ps2_data),
         .led_o(led_o),
         .disp_an_o(disp_an_o),
         .disp_seg_o(disp_seg_o)
@@ -59,6 +69,7 @@ module top_board_tb;
         dump_vcd = 0;
         force_int_start = -1;
         force_int_end = -1;
+        send_ps2_key = -1;
         sw_value = 16'h0000; // 默认 SW[7:5]=000，看程序写入的显示通道 data0。
         saw_1111 = 0;
         saw_2222 = 0;
@@ -76,6 +87,7 @@ module top_board_tb;
         void'($value$plusargs("DMEM_WORDS=%d", dmem_words));
         void'($value$plusargs("FORCE_INT_START=%d", force_int_start));
         void'($value$plusargs("FORCE_INT_END=%d", force_int_end));
+        void'($value$plusargs("SEND_PS2_KEY=%h", send_ps2_key));
         dump_vcd = $test$plusargs("DUMP_VCD");
         void'($value$plusargs("SW=%h", sw_value));
         void'($value$plusargs("IMEM=%s", imem_file));
@@ -83,6 +95,8 @@ module top_board_tb;
 
         sw_i = sw_value[15:0];
         btn_i = 5'b0;
+        ps2_clk_drive_low = 1'b0;
+        ps2_data_drive_low = 1'b0;
         rstn = 1'b0;
 
         for (i = 0; i < 1024; i = i + 1) begin
@@ -106,9 +120,43 @@ module top_board_tb;
             force U_TOP.counter0_OUT = 1'b0;
             $display("[TOP_SIM] timer INT held low until cycle %0d", force_int_start);
         end
-
         #100 rstn = 1'b1;
+        if (send_ps2_key >= 0) begin
+            #1000;
+            send_ps2_byte(send_ps2_key[7:0]);
+        end
     end
+
+    task automatic send_ps2_bit;
+        input bit_value;
+        begin
+            ps2_data_drive_low = ~bit_value;
+            #20000;
+            ps2_clk_drive_low = 1'b1;  // falling edge: PS2KB samples data here
+            #20000;
+            ps2_clk_drive_low = 1'b0;
+            #20000;
+        end
+    endtask
+
+    task automatic send_ps2_byte;
+        input [7:0] code;
+        integer bit_idx;
+        reg parity_bit;
+        begin
+            parity_bit = ~^code; // odd parity: data xor parity == 1
+            $display("[TOP_SIM] send PS2 scan code=%02x parity=%0b", code, parity_bit);
+
+            send_ps2_bit(1'b0); // start bit
+            for (bit_idx = 0; bit_idx < 8; bit_idx = bit_idx + 1)
+                send_ps2_bit(code[bit_idx]);
+            send_ps2_bit(parity_bit);
+            send_ps2_bit(1'b1); // stop bit
+
+            ps2_data_drive_low = 1'b0;
+            ps2_clk_drive_low = 1'b0;
+        end
+    endtask
 
     task automatic mark_display;
         input [31:0] value;

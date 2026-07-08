@@ -3,6 +3,10 @@ set_property -dict { PACKAGE_PIN E3    IOSTANDARD LVCMOS33 } [get_ports { clk }]
 create_clock -add -name sys_clk_pin -period 10.00 -waveform {0 5} [get_ports {clk}];
 set_property -dict { PACKAGE_PIN C12   IOSTANDARD LVCMOS33 } [get_ports { rstn }]; #IO_L3P_T0_DQS_AD1P_15 Sch=cpu_resetn
 
+# PS/2 keyboard
+set_property -dict { PACKAGE_PIN F4    IOSTANDARD LVCMOS33 } [get_ports { ps2_clk }];  #Sch=ps2_clk
+set_property -dict { PACKAGE_PIN B2    IOSTANDARD LVCMOS33 } [get_ports { ps2_data }]; #Sch=ps2_data
+
 # Push buttons: center, up, left, right, down
 set_property -dict { PACKAGE_PIN N17   IOSTANDARD LVCMOS33 } [get_ports { btn_i[0] }]; #Sch=btnc
 set_property -dict { PACKAGE_PIN M18   IOSTANDARD LVCMOS33 } [get_ports { btn_i[1] }]; #Sch=btnu
@@ -64,5 +68,4 @@ set_property -dict { PACKAGE_PIN V10   IOSTANDARD LVCMOS33 } [get_ports { sw_i[1
  set_property -dict { PACKAGE_PIN V14   IOSTANDARD LVCMOS33 } [get_ports { led_o[13] }]; #IO_L22N_T3_A04_D20_14 Sch=led[13]
  set_property -dict { PACKAGE_PIN V12   IOSTANDARD LVCMOS33 } [get_ports { led_o[14] }]; #IO_L20N_T3_A07_D23_14 Sch=led[14]
  set_property -dict { PACKAGE_PIN V11   IOSTANDARD LVCMOS33 } [get_ports { led_o[15] }]; #IO_L21N_T3_DQS_A06_D22_14 Sch=led[15]
-
 

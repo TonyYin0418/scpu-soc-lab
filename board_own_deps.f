@@ -1,5 +1,6 @@
 +incdir+./rtl
 +incdir+./IO
++incdir+./IO/PS2
 +incdir+./edf
 +incdir+./board
 
@@ -15,10 +16,12 @@
 ./rtl/alu.v
 ./rtl/ctrl.v
 ./rtl/dm_controller.v
-./edf/MIO_BUS.V
+./IO/MIO_BUS.v
 ./edf/SPIO.v
 ./edf/Multi_8CH32.v
 ./edf/SSeg7.v
 ./IO/Enter.v
 ./IO/clk_div.v
 ./IO/Counter_3_IO.v
+./IO/PS2/PS2KB.v
+./IO/PS2/PS2IO.v
