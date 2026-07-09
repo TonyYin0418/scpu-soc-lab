@@ -228,6 +228,7 @@ python3 sim/run_top_board_sim.py \
   - `0xE0000000`、`0xF0000000`、普通 RAM 地址行为保持原板级系统兼容。
 - `constraints/icf.xdc` 已新增 `ps2_clk`、`ps2_data` 管脚约束。Vivado 工程中如果暂时不接键盘，也可以保留这两个顶层端口和约束。
 - `coe/board/I_ps2_mmio_smoke.coe` 是 PS/2 MMIO smoke 程序；仿真命令见 `MANUAL.md`，预期 `--send-ps2-key 1c` 后显示 `0000011c`。
+- `coe/board/I_exception_board_smoke.coe` 是上板用 exception 主路径 smoke 程序；只测 ECALL/SYSCALL、非法指令和 ERETN，不依赖 timer interrupt。预期显示 `11110000 -> e0000002 -> 22220000 -> e0000001 -> 33330000`，最终停在 `33330000`。
 - VS Code Verilog 跳转当前使用 mshr-h Verilog-HDL 插件 + native `slang-server 0.2.7`。`.slang/server.json` 使用 `flags: -f board_own_files.f` 和精确 `indexGlobs`，已验证 `board/top.v` 中 `Enter`、`clk_div`、`ROM_D`、`SCPU`、`MIO_BUS`、`PS2IO`、`dm_controller`、`RAM_B`、`SPIO`、`Counter_x`、`Multi_8CH32`、`SSeg7` 均应可 Go to Definition。不要退回旧的 `board_own_deps.f + index.dirs` 方案；该方案曾出现重启 VS Code 后 No Definitions。
 - `ROM_D` 使用 Distributed Memory Generator，`RAM_B` 使用 Block Memory Generator；两者必须在 Vivado 中生成，仓库当前只有连接接口，没有伪造可综合实现。
 - `SCPU` 与 CPU 外围系统必须保持边界清晰。第一步只验证老师 EDF 能在外围系统中运行；替换自己的 CPU 时，接口需匹配 `edf/SCPU.v`，不要修改外围网表。

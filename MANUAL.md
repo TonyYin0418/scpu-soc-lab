@@ -277,6 +277,39 @@ display_write=44440000  # 中断返回后继续
 
 注意：不要并行运行两个 `sim/run_top_board_sim.py`，默认都会编译到 `build/top_board_simv`，并行写同一个 vvp 文件会导致 `unresolved label` 等无效错误。
 
+上板快速验证 exception 主路径时，优先使用不依赖 timer interrupt 的版本：
+
+```text
+coe/board/I_exception_board_smoke.coe
+```
+
+该程序只测试 `ECALL/SYSCALL`、非法指令、`ERETN` 返回，不依赖 `Counter_x` 产生中断。top 仿真命令：
+
+```bash
+python3 sim/run_top_board_sim.py \
+  --imem coe/board/I_exception_board_smoke.coe \
+  --sw 0000 \
+  --max-cycles 1000
+```
+
+预期关键输出：
+
+```text
+display_write=11110000
+display_write=e0000002
+display_write=22220000
+display_write=e0000001
+display_write=33330000
+```
+
+上板时设置 `SW[7:5]=000`，复位释放后最终应停在：
+
+```text
+33330000
+```
+
+如果只能看到最终值而看不到中间值，也正常；这些阶段写入之间间隔很短。
+
 ### 4.6 PS/2 键盘 MMIO top 仿真
 
 当前 `feature/ps2-keyboard` 分支已接入老师提供的 PS/2 接口文件，并整理为：
