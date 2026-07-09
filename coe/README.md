@@ -90,3 +90,11 @@ FA123456 -> Test 6 失败
 - 来源：原 `sim/data/Test_8_Instr.coe`
 - 用途：保留作 COE 格式参考
 - 当前 Icarus 回归实际使用 `sim/data/Test_8_Instr.dat`
+
+## app/
+
+### `app/dino/`
+
+- 用途：后续 Dino 类小游戏生成的 COE 输出目录。
+- 预期文件：`coe/app/dino/I_dino_game.coe`
+- 当前状态：只保留 `.gitkeep`，完整游戏程序和 COE 将由后续 PR 生成。

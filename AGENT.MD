@@ -262,6 +262,20 @@ iverilog -g2012 -Wall -s top -o build/top_vga_teacher_check -f board_files.f
 python3 sim/run_top_board_sim.py --imem coe/board/I_mem.coe --dmem coe/board/D_mem.coe --sw 8000 --max-cycles 200000 --check-vga
 python3 sim/run_top_board_sim.py --imem coe/board/I_vga_text_smoke.coe --sw 0000 --max-cycles 200 --check-vga-text
 ```
+
+## 当前阶段：Dino 类复杂应用规划分支
+
+- 当前工作分支为 `feature/dino-game-app`，从已合并 VGA 显示里程碑的 `main` 切出。
+- 目标是实现一个类似 Chrome Dinosaur 的横向跑酷小游戏，但不要求像素级复刻。
+- 本阶段先建立协作骨架，不在用户本机强制配置 RISC-V 交叉编译环境。
+- 应用目录为 `app/dino/`：
+  - `src/`：后续放裸机启动、主循环、游戏逻辑；
+  - `include/`：后续放 MMIO、VGA、键盘和游戏接口；
+  - `assets/`：字符画/资源说明；
+  - `tests/`：仿真和上板测试记录；
+  - `Makefile` / `linker.ld`：给已安装工具链的协作者生成 `coe/app/dino/I_dino_game.coe`。
+- 设计计划在 `docs/dino_game_plan.md`，包含游戏循环、VGA 文本模式方案、PS/2 按键方案、PR 协作规则和待确认问题。
+- 当前建议先做 80x60 ASCII 文本风格游戏，使用 `0xC0000000` VGA 文本显存和 `0xD0000000` PS/2 键盘 MMIO；后续若时间充足再扩展为图形 framebuffer。
 - `ROM_D` 使用 Distributed Memory Generator，`RAM_B` 使用 Block Memory Generator；两者必须在 Vivado 中生成，仓库当前只有连接接口，没有伪造可综合实现。
 - `SCPU` 与 CPU 外围系统必须保持边界清晰。第一步只验证老师 EDF 能在外围系统中运行；替换自己的 CPU 时，接口需匹配 `edf/SCPU.v`，不要修改外围网表。
 - 当前流水线分支的 `IO/clk_div.v` 在 100 MHz 输入下固定使用 `clkdiv[0]` 经 `BUFG` 后作为 CPU 时钟，频率 50 MHz。`SW[2]` 端口保留给原理图接口兼容，但当前不再用于运行时快/慢时钟选择。
