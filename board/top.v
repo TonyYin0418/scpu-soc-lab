@@ -243,53 +243,26 @@ module top(
         .seg_sout(disp_seg_o)
     );
 
-    // VGA 显示。
-    //
-    // 使用老师提供的 VGAIO/VGA_Scan 作为最终扫描与像素输出路径。
-    // 为后续写应用程序预留一个最简单的文本显存 MMIO：
-    //   0xC0000000 + (row * 80 + col) * 4
-    // 写入低 16 位 {颜色属性[15:8], ASCII[7:0]}，例如 16'hff41 显示白色 'A'。
-    //
-    // SW[15] 是硬件排错开关：
-    //   SW[15]=1：强制输出绿色全屏，用来确认线缆、管脚和 VGA 同步；
-    //   SW[15]=0：显示 CPU 可写文本显存。
-    wire [8:0]  vga_row;
-    wire [9:0]  vga_col;
-    wire [12:0] vga_vram_addr;
-    wire [15:0] vga_vram_data;
-    wire        vga_rdn;
-
+    // VGA 文本显示。
+    // 软件写 0xC0000000 + (row * 80 + col) * 4 更新一个 16 位文本单元：
+    // {颜色属性[15:8], ASCII[7:0]}。SW[15]=1 强制绿色全屏，优先用于
+    // 排查 VGA 管脚、线缆和同步；SW[15]=0 显示 CPU 可写文本显存。
     wire        vga_text_we = mem_w && (addr_bus[31:16] == 16'hc000);
     wire [12:0] vga_text_addr = addr_bus[14:2];
 
-    vga_text_ram U12_VGA_TEXT_RAM(
-        .cpu_clk  (Clk_IO),
-        .cpu_we   (vga_text_we),
-        .cpu_waddr(vga_text_addr),
-        .cpu_wdata(Cpu_data2bus[15:0]),
-        .vga_raddr(vga_vram_addr),
-        .vga_rdata(vga_vram_data)
-    );
-
-    VGAIO U13_VGAIO(
-        .clk    (clk),
-        .rst    (rst),
-        .VRAMOUT(vga_vram_data),
-        .Pixel  (13'b0),
-        .Test   (SW[15] ? 14'h30f0 : 14'h0000),
-        .Din    (32'h4000_0001),
-        .Regaddr(4'b0),
-        .Cursor (13'b0),
-        .Blink  (clkdiv[24]),
-        .row    (vga_row),
-        .col    (vga_col),
-        .R      (VGA_R),
-        .G      (VGA_G),
-        .B      (VGA_B),
-        .HSYNC  (VGA_HS),
-        .VSYNC  (VGA_VS),
-        .VRAMA  (vga_vram_addr),
-        .rdn    (vga_rdn)
+    vga_top U12_VGA_TOP(
+        .clk       (clk),
+        .rst       (rst),
+        .cpu_clk   (Clk_IO),
+        .cpu_we    (vga_text_we),
+        .cpu_waddr (vga_text_addr),
+        .cpu_wdata (Cpu_data2bus[15:0]),
+        .test_green(SW[15]),
+        .VGA_R     (VGA_R),
+        .VGA_G     (VGA_G),
+        .VGA_B     (VGA_B),
+        .VGA_HS    (VGA_HS),
+        .VGA_VS    (VGA_VS)
     );
 
 endmodule
