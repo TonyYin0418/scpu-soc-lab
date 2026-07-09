@@ -481,11 +481,13 @@ edf/SSeg7.edf
 5. 在 Hardware Manager 中 **Open Target → Auto Connect → Program Device**。
 6. 复位后观察数码管输出；当前 CPU 时钟固定为 50 MHz，`SW[2]` 不再用于切换 CPU 快慢。
 
-当前 `feature/vga-display` 分支还新增了 VGA 固定测试图案输出。Vivado Design Sources 需要额外加入：
+当前 `feature/vga-display` 分支还新增了 VGA 显示器输出。Vivado Design Sources 需要额外加入：
 
 ```text
 IO/VGA/VGA_Scan.v
-IO/VGA/vga_test_pattern.v
+IO/VGA/VGAIO.v
+IO/VGA/vga_font_roms.v
+IO/VGA/vga_text_ram.v
 ```
 
 顶层新增端口：
@@ -498,17 +500,81 @@ VGA_HS
 VGA_VS
 ```
 
-`constraints/icf.xdc` 已按 `docs/reference/xdc/Nexys-A7-100T-Master.xdc` 增加这些管脚约束。上板连接 VGA 显示器后，预期看到：
+不要把 `docs/reference/vga/*.v` 加入 Vivado Design Sources；那里只保存老师原始参考文件，实际编译使用 `IO/VGA/` 下整理后的版本。
+
+同时把下面这个字库初始化文件加入 Vivado 工程，或至少保证综合运行目录能找到它：
 
 ```text
-640x480 固定彩条 / 渐变背景
-白色边框
-中心白色方框
+coe/vga/font_ascii_8_8.mem
 ```
 
-这一阶段只验证显示器、VGA 管脚和扫描时序；CPU 还不能写 VGA 显存，也不使用字库 ROM。
+`constraints/icf.xdc` 已按 `docs/reference/xdc/Nexys-A7-100T-Master.xdc` 增加这些管脚约束。
 
-当前 VGA 扫描使用板载 100 MHz 主时钟，每 4 个周期产生一次 `pixel_ce`，等效 25 MHz 像素节拍；没有使用逻辑分频生成新的 VGA 时钟域。这样比 `clkdiv -> BUFG` 更适合先排查“显示器无信号”问题。
+VGA 有两个测试模式：
+
+1. `SW[15]=1`：强制绿色全屏测试画面。这个模式不依赖 CPU 写显存，优先用于确认线缆、显示器输入源、管脚约束和 HS/VS 同步。
+2. `SW[15]=0`：显示 CPU 可写文本显存。复位后默认左上角应显示 `SCPU VGA READY`；后续程序可以写 `0xC0000000` 地址段输出字符。
+
+VGA 文本显存地址约定：
+
+```text
+base = 0xC0000000
+addr = base + (row * 80 + col) * 4
+data[15:8] = 颜色属性，8'hFF 可作为白色前景
+data[7:0]  = ASCII 字符码
+```
+
+例子：
+
+```text
+向 0xC0000000 写 0x0000ff41  # 左上角显示白色 A
+向 0xC0000004 写 0x0000ff42  # 第 2 个字符显示白色 B
+```
+
+当前只保证 8x8 ASCII 文本模式，80 列 × 60 行。`Hzk16.coe` 和 16x16 中文字库接口已保留，但复杂中文显示不是当前门禁。
+
+VGA 使用老师提供的 `VGAIO/VGA_Scan` 路径。`VGAIO` 内部用 100 MHz 主时钟分频得到约 25 MHz VGA 扫描时钟；这和老师代码一致。若后续遇到时序问题，再考虑把 VGA 像素时钟改成 MMCM/Clocking Wizard 生成的标准 25.175 MHz。
+
+VGA 相关 top 级仿真：
+
+```bash
+# 绿屏测试路径：验证 VGA 同步/RGB 输出
+python3 sim/run_top_board_sim.py \
+  --imem coe/board/I_mem.coe \
+  --dmem coe/board/D_mem.coe \
+  --sw 8000 \
+  --max-cycles 200000 \
+  --check-vga
+
+# CPU 写文本显存路径：验证 0xC0000000 MMIO
+python3 sim/run_top_board_sim.py \
+  --imem coe/board/I_vga_text_smoke.coe \
+  --sw 0000 \
+  --max-cycles 200 \
+  --check-vga-text
+```
+
+预期分别看到：
+
+```text
+[TOP_SIM][PASS] VGA green test active
+[TOP_SIM][PASS] VGA text MMIO wrote OK into cells 0 and 1
+```
+
+如果要在开发板上专门验证 CPU 写 VGA 文本显存，把 `ROM_D` 的 COE 换成：
+
+```text
+coe/board/I_vga_text_smoke.coe
+```
+
+下载后设置：
+
+```text
+SW[15] = 0
+rstn 复位后释放
+```
+
+预期 VGA 左上角显示白色 `OK`。该程序只用于 VGA smoke，不代表应用程序。
 
 当前顶层没有独立的 PASS 灯或自动停机逻辑。`coe/board/board_io_demo_instr.coe`/`coe/board/board_io_demo_data.coe` 当前是老师板级 IO 演示程序和数据，不是 Icarus 仿真使用的 `sim/data/Test_37_Instr8.dat`。因此本阶段的实板结果用于确认 CPU 与板级 IO 外围可运行；课程 Test-37 的指令正确性仍以 Icarus 自检为主要证据。如需 Test-37 实板验收，应另行导入 Test-37 对应 COE。
 

@@ -231,25 +231,36 @@ python3 sim/run_top_board_sim.py \
 - `coe/board/I_exception_board_smoke.coe` 是上板用 exception 主路径 smoke 程序；只测 ECALL/SYSCALL、非法指令和 ERETN，不依赖 timer interrupt。预期显示 `11110000 -> e0000002 -> 22220000 -> e0000001 -> 33330000`，最终停在 `33330000`。
 - VS Code Verilog 跳转当前使用 mshr-h Verilog-HDL 插件 + native `slang-server 0.2.7`。`.slang/server.json` 使用 `flags: -f board_own_files.f` 和精确 `indexGlobs`，已验证 `board/top.v` 中 `Enter`、`clk_div`、`ROM_D`、`SCPU`、`MIO_BUS`、`PS2IO`、`dm_controller`、`RAM_B`、`SPIO`、`Counter_x`、`Multi_8CH32`、`SSeg7` 均应可 Go to Definition。不要退回旧的 `board_own_deps.f + index.dirs` 方案；该方案曾出现重启 VS Code 后 No Definitions。
 
-## 当前阶段：VGA 显示器固定图案验证分支
+## 当前阶段：VGA 显示与软件输出准备分支
 
 - 当前工作分支为 `feature/vga-display`，从已合并 PS/2 和 exception smoke 的 `main` 切出。
-- 本阶段采用方案 A：先验证 VGA 显示器有同步和画面，不接 CPU 显存，不扩展 MIO_BUS，不引入字库 ROM/IP。目标是把管脚、25 MHz 扫描时序、RGB/HS/VS 输出先验证稳定。
+- 本阶段目标已经从“固定图案验线”推进到“后续写软件前可用”：VGA 使用老师提供的 `VGAIO/VGA_Scan` 显示路径，同时接入 CPU 可写文本显存 MMIO。
 - 用户提供的 `VGA接口/` 已整理：
-  - 原 `VGAIO.v`、`VGA_Scan.v` 保存到 `docs/reference/vga/`，作为后续文本/字库显示参考，不参与当前编译；
-  - 字库 COE `font_ascii_8_8.coe`、`Hzk16.coe` 保存到 `coe/vga/`，后续接文本 VRAM 时再使用；
+  - 原 `VGAIO.v`、`VGA_Scan.v` 保存到 `docs/reference/vga/`，作为老师原始版本参考；
+  - 字库 COE `font_ascii_8_8.coe`、`Hzk16.coe` 保存到 `coe/vga/`；
   - `docs/reference/xdc/Nexys-A7-100T-Master.xdc` 保存用户提供的官方约束参考。
 - 当前实际编译使用：
-  - `IO/VGA/VGA_Scan.v`：干净版 640x480@60Hz 扫描时序，使用 100 MHz 主时钟 + 4 分频 clock-enable，不产生独立派生像素时钟；
-  - `IO/VGA/vga_test_pattern.v`：固定彩条、白边框和中心白框图案。
+  - `IO/VGA/VGA_Scan.v`：老师 640x480@60Hz 扫描时序，整理为 UTF-8 注释版本；
+  - `IO/VGA/VGAIO.v`：老师 VGAIO 显示模块，保留 Test、Pixel、文本 VRAM、字库和光标接口；
+  - `IO/VGA/vga_font_roms.v`：8x8 ASCII 字库 ROM，读取 `coe/vga/font_ascii_8_8.mem`；Vivado 工程需要能找到该 `.mem` 文件；16x16 中文字库接口暂保留为空；
+  - `IO/VGA/vga_text_ram.v`：CPU 可写 80x60 文本显存。
 - `board/top.v` 已新增 VGA 顶层端口：`VGA_R[3:0]`、`VGA_G[3:0]`、`VGA_B[3:0]`、`VGA_HS`、`VGA_VS`。
 - `constraints/icf.xdc` 已按 `Nexys-A7-100T-Master.xdc` 增加 VGA 管脚约束。
+- VGA 软件地址约定：
+  - `0xC0000000 + (row * 80 + col) * 4` 写一个 16 位文本单元；
+  - 文本单元格式为 `{颜色属性[15:8], ASCII[7:0]}`，例如 `16'hff41` 显示白色 `A`；
+  - `SW[15]=1` 强制绿色全屏 Test 通道，用于排查线缆、管脚和同步；
+  - `SW[15]=0` 显示 CPU 可写文本显存，复位后默认左上角显示 `SCPU VGA READY`。
+- `IO/MIO_BUS.v` 和 `sim/board_sim_models.v` 已把 `0xC...` 地址段排除出普通 RAM，`board/top.v` 也用 `data_ram_we` 门控 RAM 写使能，避免 MMIO 写入误伤数据 RAM。
+- `coe/board/I_vga_text_smoke.coe` 是 VGA 文本 MMIO smoke 程序，会向 cell0/cell1 写入 `OK`。
 - 验证命令：
 
 ```bash
-iverilog -g2012 -Wall -s top -o build/top_vga_check -f board_own_files.f
+iverilog -g2012 -Wall -s top -o build/top_vga_own_check -f board_own_files.f
 iverilog -g2012 -Wall -s top_board_tb -o build/top_board_vga_simv -f top_board_sim_files.f
-iverilog -g2012 -Wall -s top -o build/top_teacher_vga_check -f board_files.f
+iverilog -g2012 -Wall -s top -o build/top_vga_teacher_check -f board_files.f
+python3 sim/run_top_board_sim.py --imem coe/board/I_mem.coe --dmem coe/board/D_mem.coe --sw 8000 --max-cycles 200000 --check-vga
+python3 sim/run_top_board_sim.py --imem coe/board/I_vga_text_smoke.coe --sw 0000 --max-cycles 200 --check-vga-text
 ```
 - `ROM_D` 使用 Distributed Memory Generator，`RAM_B` 使用 Block Memory Generator；两者必须在 Vivado 中生成，仓库当前只有连接接口，没有伪造可综合实现。
 - `SCPU` 与 CPU 外围系统必须保持边界清晰。第一步只验证老师 EDF 能在外围系统中运行；替换自己的 CPU 时，接口需匹配 `edf/SCPU.v`，不要修改外围网表。

@@ -1,16 +1,14 @@
 `timescale 1ns / 1ps
 
-// 640x480@60Hz VGA 扫描时序。
+// 老师提供的 VGA_Scan 模块，整理为 UTF-8 注释版本。
 //
-// 输入 clk 使用板载 100 MHz 时钟，pixel_ce 每 4 个 clk 周期拉高一次，
-// 等效 25 MHz 像素更新节拍。这里采用最常见的 640x480 VGA 参数：
-//   Horizontal: 640 visible + 16 front + 96 sync + 48 back = 800
-//   Vertical  : 480 visible + 10 front +  2 sync + 33 back = 525
-// HSYNC/VSYNC 均为负极性。输出 row/col 只在 Active=1 时有效。
+// 输入 clk 为 25MHz VGA 像素时钟。时序对应 640x480：
+// - 水平总计 800 像素周期；
+// - 垂直总计 525 行；
+// - Active=1 时 row/col 为有效显示区域坐标。
 module VGA_Scan(
     input            clk,
     input            rst,
-    input            pixel_ce,
     output     [8:0] row,
     output     [9:0] col,
     output           Active,
@@ -18,50 +16,66 @@ module VGA_Scan(
     output reg       VSYNC
 );
 
-    localparam [9:0] H_VISIBLE    = 10'd640;
-    localparam [9:0] H_FRONT      = 10'd16;
-    localparam [9:0] H_SYNC       = 10'd96;
-    localparam [9:0] H_BACK       = 10'd48;
-    localparam [9:0] H_TOTAL      = H_VISIBLE + H_FRONT + H_SYNC + H_BACK;
-    localparam [9:0] H_SYNC_START = H_VISIBLE + H_FRONT;
-    localparam [9:0] H_SYNC_END   = H_VISIBLE + H_FRONT + H_SYNC;
+    reg [9:0] HCount;
+    reg [9:0] VCount;
+    reg       HActive;
+    reg       VActive;
 
-    localparam [9:0] V_VISIBLE    = 10'd480;
-    localparam [9:0] V_FRONT      = 10'd10;
-    localparam [9:0] V_SYNC       = 10'd2;
-    localparam [9:0] V_BACK       = 10'd33;
-    localparam [9:0] V_TOTAL      = V_VISIBLE + V_FRONT + V_SYNC + V_BACK;
-    localparam [9:0] V_SYNC_START = V_VISIBLE + V_FRONT;
-    localparam [9:0] V_SYNC_END   = V_VISIBLE + V_FRONT + V_SYNC;
-
-    reg [9:0] h_count;
-    reg [9:0] v_count;
+    localparam [9:0] HSC  = 10'd95;
+    localparam [9:0] HBP  = 10'd143;
+    localparam [9:0] HACT = 10'd783;
+    localparam [9:0] HFP  = 10'd799;
 
     always @(posedge clk or posedge rst) begin
         if (rst) begin
-            h_count <= 10'd0;
-            v_count <= 10'd0;
+            HCount  <= 10'd0;
             HSYNC   <= 1'b0;
-            VSYNC   <= 1'b0;
-        end else if (pixel_ce) begin
-            if (h_count == H_TOTAL - 10'd1) begin
-                h_count <= 10'd0;
-                if (v_count == V_TOTAL - 10'd1)
-                    v_count <= 10'd0;
-                else
-                    v_count <= v_count + 10'd1;
-            end else begin
-                h_count <= h_count + 10'd1;
-            end
-
-            HSYNC <= ~((h_count >= H_SYNC_START) && (h_count < H_SYNC_END));
-            VSYNC <= ~((v_count >= V_SYNC_START) && (v_count < V_SYNC_END));
+            HActive <= 1'b0;
+        end else begin
+            HCount <= HCount + 10'd1;
+            case (HCount)
+                HSC:  HSYNC   <= 1'b1; // 0-95：水平同步脉冲
+                HBP:  HActive <= 1'b1; // 96-143：后沿结束，进入有效区
+                HACT: HActive <= 1'b0; // 144-783：有效显示结束
+                HFP: begin
+                    HCount <= 10'd0;   // 784-799：前沿结束，下一行开始
+                    HSYNC  <= 1'b0;
+                end
+                default: ;
+            endcase
         end
     end
 
-    assign Active = (h_count < H_VISIBLE) && (v_count < V_VISIBLE);
+    localparam [9:0] VSC  = 10'd1;
+    localparam [9:0] VBP  = 10'd35;
+    localparam [9:0] VACT = 10'd515;
+    localparam [9:0] VFP  = 10'd524;
 
-    assign col = h_count;
-    assign row = v_count[8:0];
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            VCount  <= 10'd0;
+            VSYNC   <= 1'b0;
+            VActive <= 1'b0;
+        end else begin
+            if (HCount == HFP) begin
+                if (VCount == VFP)
+                    VCount <= 10'd0;
+                else
+                    VCount <= VCount + 10'd1;
+
+                case (VCount)
+                    VSC:  VSYNC   <= 1'b1; // 0-1：垂直同步脉冲
+                    VBP:  VActive <= 1'b1; // 2-35：后沿结束，进入有效区
+                    VACT: VActive <= 1'b0; // 36-515：有效显示结束
+                    VFP:  VSYNC   <= 1'b0; // 516-524：前沿结束，下一帧开始
+                    default: ;
+                endcase
+            end
+        end
+    end
+
+    assign Active = HActive & VActive;
+    assign col    = HCount - 10'd144;
+    assign row    = VCount[8:0] - 9'd36;
 
 endmodule
