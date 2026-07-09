@@ -16,6 +16,11 @@ module top_board_tb;
     tri1        ps2_data;
     reg         ps2_clk_drive_low;
     reg         ps2_data_drive_low;
+    wire [3:0]  VGA_R;
+    wire [3:0]  VGA_G;
+    wire [3:0]  VGA_B;
+    wire        VGA_HS;
+    wire        VGA_VS;
     wire [15:0] led_o;
     wire [7:0]  disp_an_o;
     wire [7:0]  disp_seg_o;
@@ -51,6 +56,11 @@ module top_board_tb;
         .btn_i(btn_i),
         .ps2_clk(ps2_clk),
         .ps2_data(ps2_data),
+        .VGA_R(VGA_R),
+        .VGA_G(VGA_G),
+        .VGA_B(VGA_B),
+        .VGA_HS(VGA_HS),
+        .VGA_VS(VGA_VS),
         .led_o(led_o),
         .disp_an_o(disp_an_o),
         .disp_seg_o(disp_seg_o)

@@ -6,6 +6,7 @@
     "rtl/*.vh",
     "IO/*.v",
     "IO/PS2/*.v",
+    "IO/VGA/*.v",
     "editor/*.v",
     "edf/SPIO.v",
     "edf/Multi_8CH32.v",

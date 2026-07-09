@@ -1,5 +1,6 @@
 +incdir+./IO
 +incdir+./IO/PS2
++incdir+./IO/VGA
 +incdir+./rtl
 +incdir+./edf
 +incdir+./board
@@ -16,4 +17,6 @@
 ./IO/Counter_3_IO.v
 ./IO/PS2/PS2KB.v
 ./IO/PS2/PS2IO.v
+./IO/VGA/VGA_Scan.v
+./IO/VGA/vga_test_pattern.v
 ./board/top.v

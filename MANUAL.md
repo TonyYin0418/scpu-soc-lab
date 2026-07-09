@@ -481,6 +481,33 @@ edf/SSeg7.edf
 5. 在 Hardware Manager 中 **Open Target → Auto Connect → Program Device**。
 6. 复位后观察数码管输出；当前 CPU 时钟固定为 50 MHz，`SW[2]` 不再用于切换 CPU 快慢。
 
+当前 `feature/vga-display` 分支还新增了 VGA 固定测试图案输出。Vivado Design Sources 需要额外加入：
+
+```text
+IO/VGA/VGA_Scan.v
+IO/VGA/vga_test_pattern.v
+```
+
+顶层新增端口：
+
+```text
+VGA_R[3:0]
+VGA_G[3:0]
+VGA_B[3:0]
+VGA_HS
+VGA_VS
+```
+
+`constraints/icf.xdc` 已按 `docs/reference/xdc/Nexys-A7-100T-Master.xdc` 增加这些管脚约束。上板连接 VGA 显示器后，预期看到：
+
+```text
+640x480 固定彩条 / 渐变背景
+白色边框
+中心白色方框
+```
+
+这一阶段只验证显示器、VGA 管脚和扫描时序；CPU 还不能写 VGA 显存，也不使用字库 ROM。
+
 当前顶层没有独立的 PASS 灯或自动停机逻辑。`coe/board/board_io_demo_instr.coe`/`coe/board/board_io_demo_data.coe` 当前是老师板级 IO 演示程序和数据，不是 Icarus 仿真使用的 `sim/data/Test_37_Instr8.dat`。因此本阶段的实板结果用于确认 CPU 与板级 IO 外围可运行；课程 Test-37 的指令正确性仍以 Icarus 自检为主要证据。如需 Test-37 实板验收，应另行导入 Test-37 对应 COE。
 
 已完成的实板观察：

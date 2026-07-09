@@ -9,6 +9,11 @@ module top(
     input      [4:0]  btn_i,
     inout             ps2_clk,
     inout             ps2_data,
+    output     [3:0]  VGA_R,
+    output     [3:0]  VGA_G,
+    output     [3:0]  VGA_B,
+    output            VGA_HS,
+    output            VGA_VS,
     output     [15:0] led_o,
     output     [7:0]  disp_an_o,
     output     [7:0]  disp_seg_o
@@ -233,6 +238,18 @@ module top(
         .LES(LE_out),
         .seg_an(disp_an_o),
         .seg_sout(disp_seg_o)
+    );
+
+    // VGA 第一阶段只输出固定测试图案，验证显示器、管脚和 25 MHz 扫描时序。
+    // 后续应用阶段再把 VGA 接入 CPU 可写显存 / MMIO。
+    vga_test_pattern U12_VGA_TEST(
+        .clk   (clk),
+        .rst   (rst),
+        .VGA_R (VGA_R),
+        .VGA_G (VGA_G),
+        .VGA_B (VGA_B),
+        .VGA_HS(VGA_HS),
+        .VGA_VS(VGA_VS)
     );
 
 endmodule

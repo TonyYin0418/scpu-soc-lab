@@ -230,6 +230,27 @@ python3 sim/run_top_board_sim.py \
 - `coe/board/I_ps2_mmio_smoke.coe` 是 PS/2 MMIO smoke 程序；仿真命令见 `MANUAL.md`，预期 `--send-ps2-key 1c` 后显示 `0000011c`。
 - `coe/board/I_exception_board_smoke.coe` 是上板用 exception 主路径 smoke 程序；只测 ECALL/SYSCALL、非法指令和 ERETN，不依赖 timer interrupt。预期显示 `11110000 -> e0000002 -> 22220000 -> e0000001 -> 33330000`，最终停在 `33330000`。
 - VS Code Verilog 跳转当前使用 mshr-h Verilog-HDL 插件 + native `slang-server 0.2.7`。`.slang/server.json` 使用 `flags: -f board_own_files.f` 和精确 `indexGlobs`，已验证 `board/top.v` 中 `Enter`、`clk_div`、`ROM_D`、`SCPU`、`MIO_BUS`、`PS2IO`、`dm_controller`、`RAM_B`、`SPIO`、`Counter_x`、`Multi_8CH32`、`SSeg7` 均应可 Go to Definition。不要退回旧的 `board_own_deps.f + index.dirs` 方案；该方案曾出现重启 VS Code 后 No Definitions。
+
+## 当前阶段：VGA 显示器固定图案验证分支
+
+- 当前工作分支为 `feature/vga-display`，从已合并 PS/2 和 exception smoke 的 `main` 切出。
+- 本阶段采用方案 A：先验证 VGA 显示器有同步和画面，不接 CPU 显存，不扩展 MIO_BUS，不引入字库 ROM/IP。目标是把管脚、25 MHz 扫描时序、RGB/HS/VS 输出先验证稳定。
+- 用户提供的 `VGA接口/` 已整理：
+  - 原 `VGAIO.v`、`VGA_Scan.v` 保存到 `docs/reference/vga/`，作为后续文本/字库显示参考，不参与当前编译；
+  - 字库 COE `font_ascii_8_8.coe`、`Hzk16.coe` 保存到 `coe/vga/`，后续接文本 VRAM 时再使用；
+  - `docs/reference/xdc/Nexys-A7-100T-Master.xdc` 保存用户提供的官方约束参考。
+- 当前实际编译使用：
+  - `IO/VGA/VGA_Scan.v`：干净版 640x480@60Hz 扫描时序；
+  - `IO/VGA/vga_test_pattern.v`：固定彩条、白边框和中心白框图案。
+- `board/top.v` 已新增 VGA 顶层端口：`VGA_R[3:0]`、`VGA_G[3:0]`、`VGA_B[3:0]`、`VGA_HS`、`VGA_VS`。
+- `constraints/icf.xdc` 已按 `Nexys-A7-100T-Master.xdc` 增加 VGA 管脚约束。
+- 验证命令：
+
+```bash
+iverilog -g2012 -Wall -s top -o build/top_vga_check -f board_own_files.f
+iverilog -g2012 -Wall -s top_board_tb -o build/top_board_vga_simv -f top_board_sim_files.f
+iverilog -g2012 -Wall -s top -o build/top_teacher_vga_check -f board_files.f
+```
 - `ROM_D` 使用 Distributed Memory Generator，`RAM_B` 使用 Block Memory Generator；两者必须在 Vivado 中生成，仓库当前只有连接接口，没有伪造可综合实现。
 - `SCPU` 与 CPU 外围系统必须保持边界清晰。第一步只验证老师 EDF 能在外围系统中运行；替换自己的 CPU 时，接口需匹配 `edf/SCPU.v`，不要修改外围网表。
 - 当前流水线分支的 `IO/clk_div.v` 在 100 MHz 输入下固定使用 `clkdiv[0]` 经 `BUFG` 后作为 CPU 时钟，频率 50 MHz。`SW[2]` 端口保留给原理图接口兼容，但当前不再用于运行时快/慢时钟选择。
