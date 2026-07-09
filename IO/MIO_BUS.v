@@ -10,6 +10,10 @@
 // 本工程新增 PS/2 键盘 MMIO：
 //   0xD0000000  : 读 {23'b0, ps2_ready, ps2_key}，并产生 ps2_read 脉冲
 //   0xD0000004  : 读最近四个键盘扫描码拼成的 ps2_scancode
+//
+// 本工程新增 VGA 文本显存写地址：
+//   0xC0000000  : 文本显存基址，由 board/top.v 直接根据 addr_bus/mem_w 写入。
+//                 MIO_BUS 这里只负责把 0xC... 排除出普通 RAM 段，避免误写 RAM。
 module MIO_BUS(
     input             clk,
     input             rst,
@@ -39,11 +43,13 @@ module MIO_BUS(
     output            ps2_read
 );
 
+    wire is_vga      = (addr_bus[31:28] == 4'hc);
     wire is_ps2_key  = (addr_bus == 32'hd000_0000);
     wire is_ps2_scan = (addr_bus == 32'hd000_0004);
     wire is_gpioe    = (addr_bus == 32'he000_0000);
     wire is_gpiof    = (addr_bus == 32'hf000_0000);
-    wire is_ram      = (addr_bus[31:28] != 4'hd) &&
+    wire is_ram      = !is_vga &&
+                       (addr_bus[31:28] != 4'hd) &&
                        (addr_bus[31:28] != 4'he) &&
                        (addr_bus[31:28] != 4'hf);
 

@@ -84,11 +84,13 @@ module MIO_BUS(
     output     [31:0] Peripheral_in,
     output            ps2_read
 );
+    wire is_vga      = (addr_bus[31:28] == 4'hc);
     wire is_ps2_key  = (addr_bus == 32'hd000_0000);
     wire is_ps2_scan = (addr_bus == 32'hd000_0004);
     wire is_gpioe    = (addr_bus == 32'he000_0000);
     wire is_gpiof    = (addr_bus == 32'hf000_0000);
-    wire is_ram      = (addr_bus[31:28] != 4'hd) &&
+    wire is_ram      = !is_vga &&
+                       (addr_bus[31:28] != 4'hd) &&
                        (addr_bus[31:28] != 4'he) &&
                        (addr_bus[31:28] != 4'hf);
 

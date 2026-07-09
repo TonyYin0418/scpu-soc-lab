@@ -9,6 +9,11 @@ module top(
     input      [4:0]  btn_i,
     inout             ps2_clk,
     inout             ps2_data,
+    output     [3:0]  VGA_R,
+    output     [3:0]  VGA_G,
+    output     [3:0]  VGA_B,
+    output            VGA_HS,
+    output            VGA_VS,
     output     [15:0] led_o,
     output     [7:0]  disp_an_o,
     output     [7:0]  disp_seg_o
@@ -145,6 +150,7 @@ module top(
     // 外部数据存储器使用 4 路字节写使能，支持 LB/LH/LW/SB/SH/SW。
     wire [31:0] ram_write_data;
     wire [3:0]  ram_wea;
+    wire [3:0]  ram_wea_gated = data_ram_we ? ram_wea : 4'b0000;
 
     dm_controller U3_dm_controller(
         .mem_w(mem_w),
@@ -158,11 +164,13 @@ module top(
     );
 
     // 老师原理图中 RAM 使用板载 100 MHz 时钟的反相时钟。
+    // RAM 写使能必须由 MIO_BUS 的 data_ram_we 再门控，否则写外设 MMIO
+    // 时 dm_controller 仍可能产生字节写使能，误写数据 RAM。
     RAM_B U3_RAM_B(
         .addra(ram_addr),
         .clka(Clk_RAM),
         .dina(ram_write_data),
-        .wea(ram_wea),
+        .wea(ram_wea_gated),
         .douta(ram_data_out)
     );
 
@@ -233,6 +241,55 @@ module top(
         .LES(LE_out),
         .seg_an(disp_an_o),
         .seg_sout(disp_seg_o)
+    );
+
+    // VGA 显示。
+    //
+    // 使用老师提供的 VGAIO/VGA_Scan 作为最终扫描与像素输出路径。
+    // 为后续写应用程序预留一个最简单的文本显存 MMIO：
+    //   0xC0000000 + (row * 80 + col) * 4
+    // 写入低 16 位 {颜色属性[15:8], ASCII[7:0]}，例如 16'hff41 显示白色 'A'。
+    //
+    // SW[15] 是硬件排错开关：
+    //   SW[15]=1：强制输出绿色全屏，用来确认线缆、管脚和 VGA 同步；
+    //   SW[15]=0：显示 CPU 可写文本显存。
+    wire [8:0]  vga_row;
+    wire [9:0]  vga_col;
+    wire [12:0] vga_vram_addr;
+    wire [15:0] vga_vram_data;
+    wire        vga_rdn;
+
+    wire        vga_text_we = mem_w && (addr_bus[31:16] == 16'hc000);
+    wire [12:0] vga_text_addr = addr_bus[14:2];
+
+    vga_text_ram U12_VGA_TEXT_RAM(
+        .cpu_clk  (Clk_IO),
+        .cpu_we   (vga_text_we),
+        .cpu_waddr(vga_text_addr),
+        .cpu_wdata(Cpu_data2bus[15:0]),
+        .vga_raddr(vga_vram_addr),
+        .vga_rdata(vga_vram_data)
+    );
+
+    VGAIO U13_VGAIO(
+        .clk    (clk),
+        .rst    (rst),
+        .VRAMOUT(vga_vram_data),
+        .Pixel  (13'b0),
+        .Test   (SW[15] ? 14'h30f0 : 14'h0000),
+        .Din    (32'h4000_0001),
+        .Regaddr(4'b0),
+        .Cursor (13'b0),
+        .Blink  (clkdiv[24]),
+        .row    (vga_row),
+        .col    (vga_col),
+        .R      (VGA_R),
+        .G      (VGA_G),
+        .B      (VGA_B),
+        .HSYNC  (VGA_HS),
+        .VSYNC  (VGA_VS),
+        .VRAMA  (vga_vram_addr),
+        .rdn    (vga_rdn)
     );
 
 endmodule

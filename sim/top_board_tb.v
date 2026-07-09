@@ -16,6 +16,11 @@ module top_board_tb;
     tri1        ps2_data;
     reg         ps2_clk_drive_low;
     reg         ps2_data_drive_low;
+    wire [3:0]  VGA_R;
+    wire [3:0]  VGA_G;
+    wire [3:0]  VGA_B;
+    wire        VGA_HS;
+    wire        VGA_VS;
     wire [15:0] led_o;
     wire [7:0]  disp_an_o;
     wire [7:0]  disp_seg_o;
@@ -30,6 +35,13 @@ module top_board_tb;
     integer force_int_end;
     integer send_ps2_key;
     integer sw_value;
+    integer check_vga;
+    integer check_vga_text;
+    integer vga_green_samples;
+    integer vga_hs_edges;
+    integer vga_vs_edges;
+    integer saw_vga_o;
+    integer saw_vga_k;
     integer saw_1111;
     integer saw_2222;
     integer saw_3333;
@@ -38,6 +50,8 @@ module top_board_tb;
     integer saw_6666;
     reg [31:0] last_disp_num;
     reg [31:0] last_display_write;
+    reg        last_vga_hs;
+    reg        last_vga_vs;
     reg [1023:0] imem_file;
     reg [1023:0] dmem_file;
 
@@ -51,6 +65,11 @@ module top_board_tb;
         .btn_i(btn_i),
         .ps2_clk(ps2_clk),
         .ps2_data(ps2_data),
+        .VGA_R(VGA_R),
+        .VGA_G(VGA_G),
+        .VGA_B(VGA_B),
+        .VGA_HS(VGA_HS),
+        .VGA_VS(VGA_VS),
         .led_o(led_o),
         .disp_an_o(disp_an_o),
         .disp_seg_o(disp_seg_o)
@@ -71,6 +90,13 @@ module top_board_tb;
         force_int_end = -1;
         send_ps2_key = -1;
         sw_value = 16'h0000; // 默认 SW[7:5]=000，看程序写入的显示通道 data0。
+        check_vga = 0;
+        check_vga_text = 0;
+        vga_green_samples = 0;
+        vga_hs_edges = 0;
+        vga_vs_edges = 0;
+        saw_vga_o = 0;
+        saw_vga_k = 0;
         saw_1111 = 0;
         saw_2222 = 0;
         saw_3333 = 0;
@@ -79,6 +105,8 @@ module top_board_tb;
         saw_6666 = 0;
         last_disp_num = 32'hxxxx_xxxx;
         last_display_write = 32'hxxxx_xxxx;
+        last_vga_hs = 1'bx;
+        last_vga_vs = 1'bx;
         imem_file = "build/top_imem.dat";
         dmem_file = "";
 
@@ -89,6 +117,8 @@ module top_board_tb;
         void'($value$plusargs("FORCE_INT_END=%d", force_int_end));
         void'($value$plusargs("SEND_PS2_KEY=%h", send_ps2_key));
         dump_vcd = $test$plusargs("DUMP_VCD");
+        check_vga = $test$plusargs("CHECK_VGA_GREEN");
+        check_vga_text = $test$plusargs("CHECK_VGA_TEXT");
         void'($value$plusargs("SW=%h", sw_value));
         void'($value$plusargs("IMEM=%s", imem_file));
         void'($value$plusargs("DMEM=%s", dmem_file));
@@ -116,6 +146,10 @@ module top_board_tb;
         $display("[TOP_SIM] imem=%0s dmem=%0s sw=%04h max_cycles=%0d",
                  imem_file, dmem_file, sw_i, max_cycles);
         $display("[TOP_SIM] SW[7:5]=%03b selects Multi_8CH32 display channel", sw_i[7:5]);
+        if (check_vga)
+            $display("[TOP_SIM] CHECK_VGA enabled: expect SW[15]=1 green test screen");
+        if (check_vga_text)
+            $display("[TOP_SIM] CHECK_VGA_TEXT enabled: expect writes cell0=ff4f, cell1=ff4b");
         if (force_int_start >= 0) begin
             force U_TOP.counter0_OUT = 1'b0;
             $display("[TOP_SIM] timer INT held low until cycle %0d", force_int_start);
@@ -179,7 +213,8 @@ module top_board_tb;
                 $finish;
             end
 
-            if ((value == 32'hff88c6ff) || (value == 32'hffff88c6) ||
+            if ((value == 32'hffff_ffff) || (value == 32'hffef_ffff) ||
+                (value == 32'hff88c6ff) || (value == 32'hffff88c6) ||
                 (value == 32'hc6ffff88) || (value == 32'h88c6ffff)) begin
                 if (saw_1111 && saw_2222 && saw_3333 &&
                     saw_4444 && saw_5555 && saw_6666) begin
@@ -211,6 +246,39 @@ module top_board_tb;
                 $display("[TOP_SIM] cycle=%0d pc=%08x display_write=%08x",
                          cycle, U_TOP.PC, U_TOP.Cpu_data2bus);
                 maybe_finish_testac(U_TOP.Cpu_data2bus);
+            end
+
+            // 后续 VGA 软件写屏时，用这行确认 CPU 已写入文本显存。
+            if (U_TOP.mem_w && (U_TOP.addr_bus[31:16] == 16'hc000)) begin
+                $display("[TOP_SIM] cycle=%0d pc=%08x vga_write addr=%08x cell=%0d data=%04x",
+                         cycle, U_TOP.PC, U_TOP.addr_bus,
+                         U_TOP.addr_bus[14:2], U_TOP.Cpu_data2bus[15:0]);
+                if ((U_TOP.addr_bus[14:2] == 13'd0) && (U_TOP.Cpu_data2bus[15:0] == 16'hff4f))
+                    saw_vga_o = 1;
+                if ((U_TOP.addr_bus[14:2] == 13'd1) && (U_TOP.Cpu_data2bus[15:0] == 16'hff4b))
+                    saw_vga_k = 1;
+                if (check_vga_text && saw_vga_o && saw_vga_k) begin
+                    $display("[TOP_SIM][PASS] VGA text MMIO wrote OK into cells 0 and 1");
+                    $finish;
+                end
+            end
+
+            if (check_vga) begin
+                if (last_vga_hs !== 1'bx && (VGA_HS != last_vga_hs))
+                    vga_hs_edges = vga_hs_edges + 1;
+                if (last_vga_vs !== 1'bx && (VGA_VS != last_vga_vs))
+                    vga_vs_edges = vga_vs_edges + 1;
+                last_vga_hs = VGA_HS;
+                last_vga_vs = VGA_VS;
+
+                if ((VGA_R == 4'h0) && (VGA_G == 4'hf) && (VGA_B == 4'h0))
+                    vga_green_samples = vga_green_samples + 1;
+
+                if ((vga_hs_edges >= 4) && (vga_green_samples >= 1000)) begin
+                    $display("[TOP_SIM][PASS] VGA green test active: hs_edges=%0d vs_edges=%0d green_samples=%0d",
+                             vga_hs_edges, vga_vs_edges, vga_green_samples);
+                    $finish;
+                end
             end
 
             // Multi_8CH32 当前选中通道送给 SSeg7 的 8 位十六进制值。
