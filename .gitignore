@@ -27,3 +27,6 @@ asm2coe/build/
 asm2coe/*.bin
 asm2coe/*.asm
 asm2coe/mcode.txt
+
+# game-side cross-compile outputs
+game/build/
