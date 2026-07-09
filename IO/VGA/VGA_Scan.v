@@ -3,9 +3,10 @@
 // 640x480@60Hz VGA 扫描时序。
 //
 // 输入 clk 使用板载 100 MHz 时钟，pixel_ce 每 4 个 clk 周期拉高一次，
-// 等效 25 MHz 像素更新节拍。这样避免从普通寄存器派生一个新时钟域。
-// 输出 row/col 只在 Active=1 时表示当前有效显示区域内的像素坐标：
-// col=0..639, row=0..479。
+// 等效 25 MHz 像素更新节拍。这里采用最常见的 640x480 VGA 参数：
+//   Horizontal: 640 visible + 16 front + 96 sync + 48 back = 800
+//   Vertical  : 480 visible + 10 front +  2 sync + 33 back = 525
+// HSYNC/VSYNC 均为负极性。输出 row/col 只在 Active=1 时有效。
 module VGA_Scan(
     input            clk,
     input            rst,
@@ -17,16 +18,21 @@ module VGA_Scan(
     output reg       VSYNC
 );
 
-    // 640x480@60Hz 标准时序，总计 800x525。
-    localparam [9:0] H_SYNC_END   = 10'd95;
-    localparam [9:0] H_ACTIVE_BEG = 10'd144;
-    localparam [9:0] H_ACTIVE_END = 10'd783;
-    localparam [9:0] H_LINE_END   = 10'd799;
+    localparam [9:0] H_VISIBLE    = 10'd640;
+    localparam [9:0] H_FRONT      = 10'd16;
+    localparam [9:0] H_SYNC       = 10'd96;
+    localparam [9:0] H_BACK       = 10'd48;
+    localparam [9:0] H_TOTAL      = H_VISIBLE + H_FRONT + H_SYNC + H_BACK;
+    localparam [9:0] H_SYNC_START = H_VISIBLE + H_FRONT;
+    localparam [9:0] H_SYNC_END   = H_VISIBLE + H_FRONT + H_SYNC;
 
-    localparam [9:0] V_SYNC_END   = 10'd1;
-    localparam [9:0] V_ACTIVE_BEG = 10'd36;
-    localparam [9:0] V_ACTIVE_END = 10'd515;
-    localparam [9:0] V_FRAME_END  = 10'd524;
+    localparam [9:0] V_VISIBLE    = 10'd480;
+    localparam [9:0] V_FRONT      = 10'd10;
+    localparam [9:0] V_SYNC       = 10'd2;
+    localparam [9:0] V_BACK       = 10'd33;
+    localparam [9:0] V_TOTAL      = V_VISIBLE + V_FRONT + V_SYNC + V_BACK;
+    localparam [9:0] V_SYNC_START = V_VISIBLE + V_FRONT;
+    localparam [9:0] V_SYNC_END   = V_VISIBLE + V_FRONT + V_SYNC;
 
     reg [9:0] h_count;
     reg [9:0] v_count;
@@ -38,9 +44,9 @@ module VGA_Scan(
             HSYNC   <= 1'b0;
             VSYNC   <= 1'b0;
         end else if (pixel_ce) begin
-            if (h_count == H_LINE_END) begin
+            if (h_count == H_TOTAL - 10'd1) begin
                 h_count <= 10'd0;
-                if (v_count == V_FRAME_END)
+                if (v_count == V_TOTAL - 10'd1)
                     v_count <= 10'd0;
                 else
                     v_count <= v_count + 10'd1;
@@ -48,16 +54,14 @@ module VGA_Scan(
                 h_count <= h_count + 10'd1;
             end
 
-            // 老师给的原始模块使用低电平同步脉冲，这里保持同样极性。
-            HSYNC <= (h_count > H_SYNC_END);
-            VSYNC <= (v_count > V_SYNC_END);
+            HSYNC <= ~((h_count >= H_SYNC_START) && (h_count < H_SYNC_END));
+            VSYNC <= ~((v_count >= V_SYNC_START) && (v_count < V_SYNC_END));
         end
     end
 
-    assign Active = (h_count >= H_ACTIVE_BEG) && (h_count <= H_ACTIVE_END) &&
-                    (v_count >= V_ACTIVE_BEG) && (v_count <= V_ACTIVE_END);
+    assign Active = (h_count < H_VISIBLE) && (v_count < V_VISIBLE);
 
-    assign col = h_count - H_ACTIVE_BEG;
-    assign row = v_count - V_ACTIVE_BEG;
+    assign col = h_count;
+    assign row = v_count[8:0];
 
 endmodule
