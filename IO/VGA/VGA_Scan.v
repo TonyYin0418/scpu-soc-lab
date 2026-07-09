@@ -2,11 +2,14 @@
 
 // 640x480@60Hz VGA 扫描时序。
 //
-// 输入 clk 应为 25 MHz 像素时钟。输出 row/col 只在 Active=1 时表示
-// 当前有效显示区域内的像素坐标：col=0..639, row=0..479。
+// 输入 clk 使用板载 100 MHz 时钟，pixel_ce 每 4 个 clk 周期拉高一次，
+// 等效 25 MHz 像素更新节拍。这样避免从普通寄存器派生一个新时钟域。
+// 输出 row/col 只在 Active=1 时表示当前有效显示区域内的像素坐标：
+// col=0..639, row=0..479。
 module VGA_Scan(
     input            clk,
     input            rst,
+    input            pixel_ce,
     output     [8:0] row,
     output     [9:0] col,
     output           Active,
@@ -34,7 +37,7 @@ module VGA_Scan(
             v_count <= 10'd0;
             HSYNC   <= 1'b0;
             VSYNC   <= 1'b0;
-        end else begin
+        end else if (pixel_ce) begin
             if (h_count == H_LINE_END) begin
                 h_count <= 10'd0;
                 if (v_count == V_FRAME_END)

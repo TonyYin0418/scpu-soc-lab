@@ -508,6 +508,8 @@ VGA_VS
 
 这一阶段只验证显示器、VGA 管脚和扫描时序；CPU 还不能写 VGA 显存，也不使用字库 ROM。
 
+当前 VGA 扫描使用板载 100 MHz 主时钟，每 4 个周期产生一次 `pixel_ce`，等效 25 MHz 像素节拍；没有使用逻辑分频生成新的 VGA 时钟域。这样比 `clkdiv -> BUFG` 更适合先排查“显示器无信号”问题。
+
 当前顶层没有独立的 PASS 灯或自动停机逻辑。`coe/board/board_io_demo_instr.coe`/`coe/board/board_io_demo_data.coe` 当前是老师板级 IO 演示程序和数据，不是 Icarus 仿真使用的 `sim/data/Test_37_Instr8.dat`。因此本阶段的实板结果用于确认 CPU 与板级 IO 外围可运行；课程 Test-37 的指令正确性仍以 Icarus 自检为主要证据。如需 Test-37 实板验收，应另行导入 Test-37 对应 COE。
 
 已完成的实板观察：

@@ -240,7 +240,7 @@ python3 sim/run_top_board_sim.py \
   - 字库 COE `font_ascii_8_8.coe`、`Hzk16.coe` 保存到 `coe/vga/`，后续接文本 VRAM 时再使用；
   - `docs/reference/xdc/Nexys-A7-100T-Master.xdc` 保存用户提供的官方约束参考。
 - 当前实际编译使用：
-  - `IO/VGA/VGA_Scan.v`：干净版 640x480@60Hz 扫描时序；
+  - `IO/VGA/VGA_Scan.v`：干净版 640x480@60Hz 扫描时序，使用 100 MHz 主时钟 + 4 分频 clock-enable，不产生独立派生像素时钟；
   - `IO/VGA/vga_test_pattern.v`：固定彩条、白边框和中心白框图案。
 - `board/top.v` 已新增 VGA 顶层端口：`VGA_R[3:0]`、`VGA_G[3:0]`、`VGA_B[3:0]`、`VGA_HS`、`VGA_VS`。
 - `constraints/icf.xdc` 已按 `Nexys-A7-100T-Master.xdc` 增加 VGA 管脚约束。

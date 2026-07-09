@@ -15,8 +15,7 @@ module vga_test_pattern(
 );
 
     reg [1:0] pixel_div;
-    wire      pixel_clk_raw;
-    wire      pixel_clk;
+    wire      pixel_ce;
 
     always @(posedge clk or posedge rst) begin
         if (rst)
@@ -25,25 +24,23 @@ module vga_test_pattern(
             pixel_div <= pixel_div + 2'b01;
     end
 
-    // 100 MHz / 4 = 25 MHz。用 BUFG 把派生像素时钟送入全局时钟网络。
-    assign pixel_clk_raw = pixel_div[1];
-    BUFG U_VGA_CLK_BUFG(
-        .I(pixel_clk_raw),
-        .O(pixel_clk)
-    );
+    // 100 MHz 下每 4 个周期更新一次 VGA 扫描状态，等效 25 MHz 像素节拍。
+    // 不再产生派生时钟，避免显示器无信号时难以区分是时钟域还是时序问题。
+    assign pixel_ce = (pixel_div == 2'b11);
 
     wire [8:0] row;
     wire [9:0] col;
     wire       active;
 
     VGA_Scan U_VGA_SCAN(
-        .clk   (pixel_clk),
-        .rst   (rst),
-        .row   (row),
-        .col   (col),
-        .Active(active),
-        .HSYNC (VGA_HS),
-        .VSYNC (VGA_VS)
+        .clk     (clk),
+        .rst     (rst),
+        .pixel_ce(pixel_ce),
+        .row     (row),
+        .col     (col),
+        .Active  (active),
+        .HSYNC   (VGA_HS),
+        .VSYNC   (VGA_VS)
     );
 
     wire border = (row < 9'd8) || (row > 9'd471) ||
