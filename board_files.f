@@ -1,11 +1,12 @@
 +incdir+./IO
++incdir+./IO/PS2
 +incdir+./rtl
 +incdir+./edf
 +incdir+./board
 
 ./editor/ip_stubs.v
 ./edf/SCPU.v
-./edf/MIO_BUS.V
+./IO/MIO_BUS.v
 ./rtl/dm_controller.v
 ./edf/SPIO.v
 ./edf/Multi_8CH32.v
@@ -13,4 +14,6 @@
 ./IO/Enter.v
 ./IO/clk_div.v
 ./IO/Counter_3_IO.v
+./IO/PS2/PS2KB.v
+./IO/PS2/PS2IO.v
 ./board/top.v

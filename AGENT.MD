@@ -71,6 +71,8 @@
 - 流水线第一版已实现：IF/ID/EX/MEM/WB 五级，流水线寄存器和 PC 在下降沿更新，分支/跳转在 EX 阶段决策，静态预测 PC+4，taken 时 flush IF/ID 和 ID/EX；新增 `rtl/forward_unit.v` 和 `rtl/hazard_unit.v`，支持 EX/MEM、MEM/WB 转发和 load-use 暂停。
 - 当前流水线仿真状态：`iverilog -g2012 -Wall -s sccomp_tb -o build/simv -f files.f` 通过；`vvp -n build/simv`、`vvp -n build/simv +TEST_AUIPC`、`vvp -n build/simv +TEST37` 均通过；`iverilog -g2012 -Wall -s top -o build/top_own_check -f board_own_files.f` 通过。
 - 流水线实板时钟问题已定位并修正：直接把 `clkdiv[x]` 或 `SW[2] ? clkdiv[a] : clkdiv[b]` 作为 CPU 时钟时，Vivado 可能让该时钟走普通 routing/LUT mux，导致不同分频位和 mux 组合表现不一致，出现 `FA123456`、全 8 等不稳定现象。当前 `IO/clk_div.v` 固定使用 `clkdiv[0]` 经 `BUFG` 输出 `Clk_CPU`，即 50 MHz；该方案经用户实板测试 `testac.coe` 可进入成功动画。
+- 已在 `feature/interrupt-exception` 分支完成单级中断/异常基础实现并提交版本边界 `feat: implement single-level trap handling`：支持非法指令、ECALL/SYSCALL、timer interrupt、SEPC/SCAUSE/STATUS/INTMASK、ERET/ERETN 和 top 级 trap 测试程序。
+- 当前进入 `feature/ps2-keyboard` 分支。已把用户提供的 `PS2接口` 文件整理到 `IO/PS2/`，并开始将 PS/2 键盘作为 MMIO 外设接入板级系统。
 
 支持的指令如下：
 
@@ -179,11 +181,55 @@ gtkwave build/sccomp_tb.vcd
 - Test-37 有 71 条机器指令。单周期版本可用 `PC=0x110` 且 `x10=0x7b2` 作为完成点；流水线版本不要依赖固定 PC 点，应以第一次写出 `dmem[0] <= 0x000007b2` 作为通过观察点，因为程序末尾会继续落入 `F_Test_JAL` 并循环覆盖 `dmem[0]`。
 - 修改测试程序后，必须重新独立推导预期寄存器和内存结果，不能用被测 RTL 生成标准答案。
 
-## 当前阶段：老师 EDF 板级系统
+## 当前阶段：单级中断/异常分支
 
-- `board/top.v` 是当前 Vivado 顶层，连接老师的 `SCPU.edf`、`MIO_BUS.edf`、`SPIO.edf`、`Multi_8CH32.edf`、`SSeg7.edf`、自研 `rtl/dm_controller.v` 以及 `IO/` 中的 RTL。当前不再使用老师提供的 `edf/dm_controller.edf` 或其 stub 参与构建。
-- VS Code Verilog 跳转当前使用 mshr-h Verilog-HDL 插件 + native `slang-server 0.2.7`。`.slang/server.json` 使用 `flags: -f board_own_files.f` 和精确 `indexGlobs`，已验证 `board/top.v` 中 `Enter`、`clk_div`、`ROM_D`、`SCPU`、`MIO_BUS`、`dm_controller`、`RAM_B`、`SPIO`、`Counter_x`、`Multi_8CH32`、`SSeg7` 均可 Go to Definition。不要退回旧的 `board_own_deps.f + index.dirs` 方案；该方案曾出现重启 VS Code 后 No Definitions。
-- 当前 `indexGlobs` 显式列出 `edf/MIO_BUS.V`，原因是该文件扩展名为大写 `.V`；普通目录索引可能漏掉它。不要直接索引整个 `edf/` 目录，否则容易同时索引老师 `edf/SCPU.v` 和自研 `rtl/SCPU.v`，导致同名模块混乱。
+- 当前工作分支为 `feature/interrupt-exception`，从 `main` 切出。`main` 已提交 `test: add board top simulation workflow`，包含 top 级 COE 仿真工具；中断/异常实现不要直接混入旧流水线里程碑提交。
+- 本阶段不实现 8259，不实现嵌套中断；按课件实现单级中断/异常。
+- 当前实现范围：
+  - 非法指令异常，`SCAUSE=8'h01`，向量入口 `0x00000300`；
+  - `ECALL/SYSCALL`，`SCAUSE=8'h02`，向量入口 `0x00000320`；
+  - 计时中断，`SCAUSE=8'h06`，向量入口 `0x00000340`；
+  - `SEPC` 保存进入 trap 时当前 EX 阶段 PC；
+  - `STATUS[0]` 表示正在 trap 中；
+  - `INTMASK[6]` 控制计时中断允许；
+  - `ERET=32'h00100073` 返回 `SEPC`；
+  - `ERETN=32'h00200073` 返回 `SEPC+4`；
+  - 暂不实现 `MRET`，除非后续老师明确要求。
+- `INTMASK` 复位为 0，避免普通程序被 `Counter_x`/`INT` 意外打断。软件可向 `0xFFFF_FF00` 写低 8 位更新 `INTMASK`；写入时清空 pending。
+- `rtl/exception_unit.v` 是新增异常控制模块。新增 RTL 必须同步 `files.f`、`board_own_files.f`、`board_own_deps.f`、`top_board_sim_files.f`。
+- `coe/board/I_trap_test.coe` 是中断/异常专用 top 仿真程序。预期输出：
+
+```text
+11110000 -> e0000002 -> 22220000 -> e0000001 -> 33330000 -> e0000006 -> 44440000
+```
+
+- top 仿真命令：
+
+```bash
+python3 sim/run_top_board_sim.py \
+  --imem coe/board/I_trap_test.coe \
+  --sw 0000 \
+  --max-cycles 2000 \
+  --force-int-start 80 \
+  --force-int-end 90
+```
+
+- `--force-int-start/end` 只用于仿真强制产生一次 timer INT；上板阶段应改用计数器外设产生 `SCPU.INT`。
+- 用户提供的老师 `MIO_BUS.v` 已整理为 `docs/reference/MIO_BUS_reference.v`，只作地址译码参考，不得加入任何 filelist，避免与 `edf/MIO_BUS.V` 或仿真模型重复定义。
+
+## 当前阶段：PS/2 键盘 MMIO 外设分支
+
+- 当前工作分支为 `feature/ps2-keyboard`。该分支从单级中断/异常版本边界切出，目的是在不改 CPU 指令逻辑的前提下，把键盘接入板级 MMIO。
+- `board/top.v` 是当前 Vivado 顶层，连接自研 `rtl/SCPU.v`、自写 `IO/MIO_BUS.v`、`IO/PS2/PS2IO.v`、`IO/PS2/PS2KB.v`、老师 `SPIO.edf`、`Multi_8CH32.edf`、`SSeg7.edf`、自研 `rtl/dm_controller.v` 以及 `IO/` 中的时钟/输入/计数器 RTL。
+- 当前不再使用老师提供的 `edf/MIO_BUS.edf` / `edf/MIO_BUS.V` 参与自研 CPU 板级构建；原因是键盘需要新增 `0xD0000000`/`0xD0000004` 地址映射和 `ps2_read` 握手信号，老师黑盒接口无法扩展。
+- PS/2 地址映射：
+  - `0xD0000000`：读 `{23'b0, ps2_ready, ps2_key}`，并向 PS2IO 发出读确认；
+  - `0xD0000004`：读最近四个扫描码拼成的 `ps2_scancode`；
+  - `0xE0000000`、`0xF0000000`、普通 RAM 地址行为保持原板级系统兼容。
+- `constraints/icf.xdc` 已新增 `ps2_clk`、`ps2_data` 管脚约束。Vivado 工程中如果暂时不接键盘，也可以保留这两个顶层端口和约束。
+- `coe/board/I_ps2_mmio_smoke.coe` 是 PS/2 MMIO smoke 程序；仿真命令见 `MANUAL.md`，预期 `--send-ps2-key 1c` 后显示 `0000011c`。
+- `coe/board/I_exception_board_smoke.coe` 是上板用 exception 主路径 smoke 程序；只测 ECALL/SYSCALL、非法指令和 ERETN，不依赖 timer interrupt。预期显示 `11110000 -> e0000002 -> 22220000 -> e0000001 -> 33330000`，最终停在 `33330000`。
+- VS Code Verilog 跳转当前使用 mshr-h Verilog-HDL 插件 + native `slang-server 0.2.7`。`.slang/server.json` 使用 `flags: -f board_own_files.f` 和精确 `indexGlobs`，已验证 `board/top.v` 中 `Enter`、`clk_div`、`ROM_D`、`SCPU`、`MIO_BUS`、`PS2IO`、`dm_controller`、`RAM_B`、`SPIO`、`Counter_x`、`Multi_8CH32`、`SSeg7` 均应可 Go to Definition。不要退回旧的 `board_own_deps.f + index.dirs` 方案；该方案曾出现重启 VS Code 后 No Definitions。
 - `ROM_D` 使用 Distributed Memory Generator，`RAM_B` 使用 Block Memory Generator；两者必须在 Vivado 中生成，仓库当前只有连接接口，没有伪造可综合实现。
 - `SCPU` 与 CPU 外围系统必须保持边界清晰。第一步只验证老师 EDF 能在外围系统中运行；替换自己的 CPU 时，接口需匹配 `edf/SCPU.v`，不要修改外围网表。
 - 当前流水线分支的 `IO/clk_div.v` 在 100 MHz 输入下固定使用 `clkdiv[0]` 经 `BUFG` 后作为 CPU 时钟，频率 50 MHz。`SW[2]` 端口保留给原理图接口兼容，但当前不再用于运行时快/慢时钟选择。

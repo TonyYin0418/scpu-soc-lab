@@ -1,5 +1,6 @@
 +incdir+./rtl
 +incdir+./IO
++incdir+./IO/PS2
 +incdir+./board
 +incdir+./sim
 
@@ -10,6 +11,7 @@
 ./rtl/RF.v
 ./rtl/forward_unit.v
 ./rtl/hazard_unit.v
+./rtl/exception_unit.v
 ./rtl/SCPU.v
 ./rtl/alu.v
 ./rtl/ctrl.v
@@ -17,5 +19,7 @@
 ./IO/Enter.v
 ./IO/clk_div.v
 ./IO/Counter_3_IO.v
+./IO/PS2/PS2KB.v
+./IO/PS2/PS2IO.v
 ./board/top.v
 ./sim/top_board_tb.v

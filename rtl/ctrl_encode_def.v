@@ -47,4 +47,26 @@
 `define dm_byte              3'b011
 `define dm_byte_unsigned     3'b100
 
+// 单级中断/异常原因码
+`define SCAUSE_NONE    8'h00
+`define SCAUSE_ILLEGAL 8'h01
+`define SCAUSE_ECALL   8'h02
+`define SCAUSE_TIMER   8'h06
+
+// 单级中断/异常向量入口
+`define TRAP_VEC_ILLEGAL 32'h0000_0300
+`define TRAP_VEC_ECALL   32'h0000_0320
+`define TRAP_VEC_TIMER   32'h0000_0340
+
+// STATUS / INTMASK 位定义
+`define STATUS_EXL_BIT 0
+`define INT_TIMER_BIT  6
+`define INT_TIMER_MASK 8'b0100_0000
+`define MMIO_INTMASK   32'hFFFF_FF00
+
+// 课程自定义返回指令编码
+`define INST_ECALL  32'h0000_0073
+`define INST_ERET   32'h0010_0073
+`define INST_ERETN  32'h0020_0073
+
 `endif
