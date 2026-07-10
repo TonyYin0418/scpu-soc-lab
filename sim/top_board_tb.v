@@ -39,6 +39,7 @@ module top_board_tb;
     integer check_vga_text;
     integer check_dino_ready;
     integer check_dino_tick;
+    integer check_ps2_smoke;
     integer vga_green_samples;
     integer vga_hs_edges;
     integer vga_vs_edges;
@@ -101,6 +102,7 @@ module top_board_tb;
         check_vga_text = 0;
         check_dino_ready = 0;
         check_dino_tick = 0;
+        check_ps2_smoke = 0;
         vga_green_samples = 0;
         vga_hs_edges = 0;
         vga_vs_edges = 0;
@@ -135,6 +137,7 @@ module top_board_tb;
         check_vga_text = $test$plusargs("CHECK_VGA_TEXT");
         check_dino_ready = $test$plusargs("CHECK_DINO_READY");
         check_dino_tick = $test$plusargs("CHECK_DINO_TICK");
+        check_ps2_smoke = $test$plusargs("CHECK_PS2_SMOKE");
         void'($value$plusargs("SW=%h", sw_value));
         void'($value$plusargs("IMEM=%s", imem_file));
         void'($value$plusargs("DMEM=%s", dmem_file));
@@ -170,6 +173,8 @@ module top_board_tb;
             $display("[TOP_SIM] CHECK_DINO_READY enabled: expect custom dino tiles and READY state");
         if (check_dino_tick)
             $display("[TOP_SIM] CHECK_DINO_TICK enabled: expect timer enable, vector 0x340 and score tick");
+        if (check_ps2_smoke)
+            $display("[TOP_SIM] CHECK_PS2_SMOKE enabled: expect ready bit plus sent scan code");
         if (force_int_start >= 0) begin
             force U_TOP.cpu_timer_irq = 1'b0;
             $display("[TOP_SIM] timer INT held low until cycle %0d", force_int_start);
@@ -278,6 +283,11 @@ module top_board_tb;
                 $display("[TOP_SIM] cycle=%0d pc=%08x display_write=%08x",
                          cycle, U_TOP.PC, U_TOP.Cpu_data2bus);
                 maybe_finish_testac(U_TOP.Cpu_data2bus);
+                if (check_ps2_smoke && send_ps2_key >= 0 &&
+                    (U_TOP.Cpu_data2bus == (32'h0000_0100 | send_ps2_key[7:0]))) begin
+                    $display("[TOP_SIM][PASS] PS/2 MMIO delivered scan code with ready bit");
+                    $finish;
+                end
             end
 
             // 后续 VGA 软件写屏时，用这行确认 CPU 已写入文本显存。

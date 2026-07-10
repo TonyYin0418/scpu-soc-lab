@@ -747,6 +747,32 @@ Vivado 的 `ROM_D` 需要重新选择更新后的 COE 后重新生成 IP。
 旧 `Counter_x` 只有在软件实际配置通道 0 后才允许接入 CPU，避免其上电下溢
 形成持续高电平中断。
 
+已有 Vivado 工程升级到这个游戏版本时，Design Sources 只需替换以下现有文件：
+
+```text
+board/top.v
+IO/VGA/vga_text_renderer.v
+IO/VGA/vga_font_rom.v
+```
+
+并新增：
+
+```text
+IO/game_timer.v
+```
+
+最后把指令 ROM 初始化文件更新为：
+
+```text
+coe/board/I_dino_game.coe
+```
+
+`game/*.c`、`game/*.S`、`game/linker.ld`、`sim/*` 和仓库根目录的 `*.f` 是构建/
+仿真输入，不加入 Vivado Design Sources。`IO/VGA/vga_text_ram.v` 本轮只有注释
+更新，已有工程无需因此替换；`IO/MIO_BUS.v`、PS/2 RTL 和 CPU RTL 本轮也没有
+功能改动。更新 COE 后应在 `ROM_D` 的 IP 配置中重新选择该文件并重新生成
+Output Products，再重新综合、实现和生成 bitstream。
+
 对应的本地门禁为：
 
 ```bash

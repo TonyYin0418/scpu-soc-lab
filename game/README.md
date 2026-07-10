@@ -27,6 +27,12 @@ Install the generated instruction image for board/Vivado use:
 make install-coe
 ```
 
+For an existing Vivado project, replace `board/top.v`,
+`IO/VGA/vga_text_renderer.v`, and `IO/VGA/vga_font_rom.v`; add
+`IO/game_timer.v`; then refresh the instruction ROM from
+`coe/board/I_dino_game.coe`. The C/assembly/linker and simulation files are not
+Vivado Design Sources.
+
 Outputs are written to `build/`:
 
 - `game.elf`: linked RV32I bare-metal ELF

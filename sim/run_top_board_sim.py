@@ -72,6 +72,7 @@ def main() -> None:
     parser.add_argument("--check-vga-text", action="store_true", help="check CPU writes OK into VGA text MMIO")
     parser.add_argument("--check-dino-ready", action="store_true", help="check game reaches READY with custom dino tiles")
     parser.add_argument("--check-dino-tick", action="store_true", help="check game timer interrupt advances the first frame")
+    parser.add_argument("--check-ps2-smoke", action="store_true", help="check PS/2 smoke ROM reports ready plus sent key")
     parser.add_argument("--force-int-start", type=int, help="force timer INT high at this top_tb cycle")
     parser.add_argument("--force-int-end", type=int, help="release forced timer INT at this top_tb cycle")
     parser.add_argument("--send-ps2-key", help="send a PS/2 scan code byte in top simulation, hex")
@@ -106,6 +107,8 @@ def main() -> None:
         vvp_args.append("+CHECK_DINO_READY")
     if args.check_dino_tick:
         vvp_args.append("+CHECK_DINO_TICK")
+    if args.check_ps2_smoke:
+        vvp_args.append("+CHECK_PS2_SMOKE")
     if args.force_int_start is not None:
         vvp_args.append(f"+FORCE_INT_START={args.force_int_start}")
     if args.force_int_end is not None:
