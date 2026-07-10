@@ -58,12 +58,17 @@ make
 
 ```text
 coe/app/dino/I_dino_game.coe
+coe/app/dino/D_dino_game.coe
 ```
 
-当前目录已经具备可构建的启动代码和基础驱动，完整游戏逻辑仍在开发。
+当前初版游戏已经实现标题、开始、跳跃、障碍、碰撞、计分、加速、Game Over
+和重开。Vivado 中必须把 `I_dino_game.coe` 配给 `ROM_D`，把
+`D_dino_game.coe` 配给 `RAM_B`；只加载指令 COE 会导致 C 字符串为空。
 
-当前启动与基础驱动 smoke 已完成：`make` 生成的程序为 RV32I ELF，顶层仿真
-会在 VGA 清屏后向数码管 MMIO 写入 `D1000000`。完整游戏状态机在下一里程碑加入。
+正常演示使用 `SW[15]=0`、`SW[14]=0`。Space/W/方向键上用于开始和跳跃，
+R/Enter 用于重开，板载按钮也可开始/跳跃。`SW[14]=1` 只用于加速仿真。
+
+两条 DINO 自动验收命令和预期结果见 `app/dino/tests/README.md`。
 
 ## 2. 环境检查
 

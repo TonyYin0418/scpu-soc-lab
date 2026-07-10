@@ -18,19 +18,19 @@ SECTIONS
     {
         KEEP(*(.text.start))
         *(.text*)
-        *(.rodata*)
         . = ALIGN(4);
     } > ROM
 
     .data : ALIGN(4)
     {
         __data_start = .;
+        /* Harvard 结构中，C 字符串也必须通过数据 RAM 读取。 */
+        *(.rodata*)
         *(.sdata*)
         *(.data*)
         . = ALIGN(4);
         __data_end = .;
-    } > RAM AT > ROM
-    __data_load = LOADADDR(.data);
+    } > RAM
 
     .bss (NOLOAD) : ALIGN(4)
     {

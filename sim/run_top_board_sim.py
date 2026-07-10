@@ -70,9 +70,15 @@ def main() -> None:
     parser.add_argument("--dump-vcd", action="store_true", help="dump build/top_board_tb.vcd")
     parser.add_argument("--check-vga", action="store_true", help="check VGA green test path; use --sw 8000")
     parser.add_argument("--check-vga-text", action="store_true", help="check CPU writes OK into VGA text MMIO")
+    parser.add_argument("--check-dino", action="store_true", help="check DINO title, running and game-over flow")
+    parser.add_argument("--check-dino-jump", action="store_true", help="check that a second jump key moves DINO upward")
+    parser.add_argument("--trace-vga-writes", action="store_true", help="print every CPU VGA text MMIO write")
     parser.add_argument("--force-int-start", type=int, help="force timer INT high at this top_tb cycle")
     parser.add_argument("--force-int-end", type=int, help="release forced timer INT at this top_tb cycle")
     parser.add_argument("--send-ps2-key", help="send a PS/2 scan code byte in top simulation, hex")
+    parser.add_argument("--send-ps2-key2", help="send a second PS/2 scan code byte, hex")
+    parser.add_argument("--send-ps2-key2-delay-ns", type=int, default=2000000,
+                        help="delay after the first PS/2 byte before sending the second")
     args = parser.parse_args()
 
     imem_coe = (ROOT / args.imem).resolve()
@@ -100,12 +106,21 @@ def main() -> None:
         vvp_args.append("+CHECK_VGA_GREEN")
     if args.check_vga_text:
         vvp_args.append("+CHECK_VGA_TEXT")
+    if args.check_dino:
+        vvp_args.append("+CHECK_DINO_FLOW")
+    if args.check_dino_jump:
+        vvp_args.append("+CHECK_DINO_JUMP")
+    if args.trace_vga_writes:
+        vvp_args.append("+TRACE_VGA_WRITES")
     if args.force_int_start is not None:
         vvp_args.append(f"+FORCE_INT_START={args.force_int_start}")
     if args.force_int_end is not None:
         vvp_args.append(f"+FORCE_INT_END={args.force_int_end}")
     if args.send_ps2_key is not None:
         vvp_args.append(f"+SEND_PS2_KEY={args.send_ps2_key}")
+    if args.send_ps2_key2 is not None:
+        vvp_args.append(f"+SEND_PS2_KEY2={args.send_ps2_key2}")
+        vvp_args.append(f"+SEND_PS2_KEY2_DELAY_NS={args.send_ps2_key2_delay_ns}")
 
     out_path = ROOT / args.out
     run([

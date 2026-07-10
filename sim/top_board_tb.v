@@ -34,14 +34,25 @@ module top_board_tb;
     integer force_int_start;
     integer force_int_end;
     integer send_ps2_key;
+    integer send_ps2_key2;
+    integer send_ps2_key2_delay_ns;
     integer sw_value;
     integer check_vga;
     integer check_vga_text;
+    integer check_dino;
+    integer check_dino_jump;
+    integer trace_vga_writes;
     integer vga_green_samples;
     integer vga_hs_edges;
     integer vga_vs_edges;
     integer saw_vga_o;
     integer saw_vga_k;
+    integer saw_dino_title;
+    integer saw_dino_title_text;
+    integer saw_dino_running;
+    integer saw_dino_game_over;
+    integer saw_dino_restarted;
+    integer saw_dino_jump;
     integer saw_1111;
     integer saw_2222;
     integer saw_3333;
@@ -52,6 +63,7 @@ module top_board_tb;
     reg [31:0] last_display_write;
     reg        last_vga_hs;
     reg        last_vga_vs;
+    reg        last_ps2_ready;
     reg [1023:0] imem_file;
     reg [1023:0] dmem_file;
 
@@ -89,14 +101,25 @@ module top_board_tb;
         force_int_start = -1;
         force_int_end = -1;
         send_ps2_key = -1;
+        send_ps2_key2 = -1;
+        send_ps2_key2_delay_ns = 2000000;
         sw_value = 16'h0000; // 默认 SW[7:5]=000，看程序写入的显示通道 data0。
         check_vga = 0;
         check_vga_text = 0;
+        check_dino = 0;
+        check_dino_jump = 0;
+        trace_vga_writes = 0;
         vga_green_samples = 0;
         vga_hs_edges = 0;
         vga_vs_edges = 0;
         saw_vga_o = 0;
         saw_vga_k = 0;
+        saw_dino_title = 0;
+        saw_dino_title_text = 0;
+        saw_dino_running = 0;
+        saw_dino_game_over = 0;
+        saw_dino_restarted = 0;
+        saw_dino_jump = 0;
         saw_1111 = 0;
         saw_2222 = 0;
         saw_3333 = 0;
@@ -107,6 +130,7 @@ module top_board_tb;
         last_display_write = 32'hxxxx_xxxx;
         last_vga_hs = 1'bx;
         last_vga_vs = 1'bx;
+        last_ps2_ready = 1'b0;
         imem_file = "build/top_imem.dat";
         dmem_file = "";
 
@@ -116,9 +140,14 @@ module top_board_tb;
         void'($value$plusargs("FORCE_INT_START=%d", force_int_start));
         void'($value$plusargs("FORCE_INT_END=%d", force_int_end));
         void'($value$plusargs("SEND_PS2_KEY=%h", send_ps2_key));
+        void'($value$plusargs("SEND_PS2_KEY2=%h", send_ps2_key2));
+        void'($value$plusargs("SEND_PS2_KEY2_DELAY_NS=%d", send_ps2_key2_delay_ns));
         dump_vcd = $test$plusargs("DUMP_VCD");
         check_vga = $test$plusargs("CHECK_VGA_GREEN");
         check_vga_text = $test$plusargs("CHECK_VGA_TEXT");
+        check_dino = $test$plusargs("CHECK_DINO_FLOW");
+        check_dino_jump = $test$plusargs("CHECK_DINO_JUMP");
+        trace_vga_writes = $test$plusargs("TRACE_VGA_WRITES");
         void'($value$plusargs("SW=%h", sw_value));
         void'($value$plusargs("IMEM=%s", imem_file));
         void'($value$plusargs("DMEM=%s", dmem_file));
@@ -150,6 +179,10 @@ module top_board_tb;
             $display("[TOP_SIM] CHECK_VGA enabled: expect SW[15]=1 green test screen");
         if (check_vga_text)
             $display("[TOP_SIM] CHECK_VGA_TEXT enabled: expect writes cell0=ff4f, cell1=ff4b");
+        if (check_dino)
+            $display("[TOP_SIM] CHECK_DINO enabled: expect title, running, game over and restart");
+        if (check_dino_jump)
+            $display("[TOP_SIM] CHECK_DINO_JUMP enabled: expect a visible jump");
         if (force_int_start >= 0) begin
             force U_TOP.counter0_OUT = 1'b0;
             $display("[TOP_SIM] timer INT held low until cycle %0d", force_int_start);
@@ -158,6 +191,10 @@ module top_board_tb;
         if (send_ps2_key >= 0) begin
             #1000;
             send_ps2_byte(send_ps2_key[7:0]);
+        end
+        if (send_ps2_key2 >= 0) begin
+            #(send_ps2_key2_delay_ns);
+            send_ps2_byte(send_ps2_key2[7:0]);
         end
     end
 
@@ -238,6 +275,12 @@ module top_board_tb;
                 $display("[TOP_SIM] cycle=%0d force timer INT low", cycle);
             end
 
+            if (U_TOP.ps2_ready != last_ps2_ready) begin
+                last_ps2_ready = U_TOP.ps2_ready;
+                $display("[TOP_SIM] cycle=%0d ps2_ready=%0b key=%02x read=%0b",
+                         cycle, U_TOP.ps2_ready, U_TOP.ps2_testkey, U_TOP.ps2_read);
+            end
+
             // 程序写显示 MMIO：这是判断“数码管理论显示值”的最可靠事件。
             if (U_TOP.mem_w && (U_TOP.addr_bus == 32'he000_0000) &&
                 (U_TOP.Cpu_data2bus !== last_display_write)) begin
@@ -245,20 +288,46 @@ module top_board_tb;
                 mark_display(U_TOP.Cpu_data2bus);
                 $display("[TOP_SIM] cycle=%0d pc=%08x display_write=%08x",
                          cycle, U_TOP.PC, U_TOP.Cpu_data2bus);
+                if (U_TOP.Cpu_data2bus == 32'hd100_0000)
+                    saw_dino_title = 1;
+                if (saw_dino_title && (U_TOP.Cpu_data2bus == 32'h0000_0001))
+                    saw_dino_running = 1;
+                if (saw_dino_game_over && (U_TOP.Cpu_data2bus == 32'h0000_0000))
+                    saw_dino_restarted = 1;
                 maybe_finish_testac(U_TOP.Cpu_data2bus);
             end
 
             // 后续 VGA 软件写屏时，用这行确认 CPU 已写入文本显存。
             if (U_TOP.mem_w && (U_TOP.addr_bus[31:16] == 16'hc000)) begin
-                $display("[TOP_SIM] cycle=%0d pc=%08x vga_write addr=%08x cell=%0d data=%04x",
-                         cycle, U_TOP.PC, U_TOP.addr_bus,
-                         U_TOP.addr_bus[14:2], U_TOP.Cpu_data2bus[15:0]);
+                if (trace_vga_writes || check_vga_text)
+                    $display("[TOP_SIM] cycle=%0d pc=%08x vga_write addr=%08x cell=%0d data=%04x",
+                             cycle, U_TOP.PC, U_TOP.addr_bus,
+                             U_TOP.addr_bus[14:2], U_TOP.Cpu_data2bus[15:0]);
                 if ((U_TOP.addr_bus[14:2] == 13'd0) && (U_TOP.Cpu_data2bus[15:0] == 16'hff4f))
                     saw_vga_o = 1;
                 if ((U_TOP.addr_bus[14:2] == 13'd1) && (U_TOP.Cpu_data2bus[15:0] == 16'hff4b))
                     saw_vga_k = 1;
                 if (check_vga_text && saw_vga_o && saw_vga_k) begin
                     $display("[TOP_SIM][PASS] VGA text MMIO wrote OK into cells 0 and 1");
+                    $finish;
+                end
+                if ((U_TOP.addr_bus[14:2] == 13'd2035) &&
+                    (U_TOP.Cpu_data2bus[15:0] == 16'hcc47))
+                    saw_dino_game_over = 1;
+                if ((U_TOP.addr_bus[14:2] == 13'd992) &&
+                    (U_TOP.Cpu_data2bus[15:0] == 16'hbb53))
+                    saw_dino_title_text = 1;
+                if ((U_TOP.addr_bus[14:2] == 13'd3610) &&
+                    (U_TOP.Cpu_data2bus[15:0] == 16'hff6f))
+                    saw_dino_jump = 1;
+                if (check_dino && saw_dino_title && saw_dino_title_text && saw_dino_running &&
+                    saw_dino_game_over && saw_dino_restarted) begin
+                    $display("[TOP_SIM][PASS] DINO title -> running -> game over -> restart completed");
+                    $finish;
+                end
+                if (check_dino_jump && saw_dino_title && saw_dino_title_text &&
+                    saw_dino_running && saw_dino_jump) begin
+                    $display("[TOP_SIM][PASS] DINO jump reached visible height");
                     $finish;
                 end
             end
@@ -291,7 +360,10 @@ module top_board_tb;
             if (cycle > max_cycles) begin
                 $display("[TOP_SIM][TIMEOUT] cycle=%0d pc=%08x display=%08x disp_num=%08x",
                          cycle, U_TOP.PC, last_display_write, U_TOP.Disp_num);
-                $finish;
+                if (check_dino || check_dino_jump || check_vga || check_vga_text)
+                    $fatal(1, "[TOP_SIM][FAIL] enabled check did not finish before timeout");
+                else
+                    $finish;
             end
         end
     end

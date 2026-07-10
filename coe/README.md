@@ -95,6 +95,8 @@ FA123456 -> Test 6 失败
 
 ### `app/dino/`
 
-- 用途：后续 Dino 类小游戏生成的 COE 输出目录。
-- 预期文件：`coe/app/dino/I_dino_game.coe`
-- 当前状态：只保留 `.gitkeep`，完整游戏程序和 COE 将由后续 PR 生成。
+- 用途：Dino 类小游戏的 Harvard 指令/数据镜像。
+- `I_dino_game.coe`：导入 `ROM_D`，759 个指令/只读代码字。
+- `D_dino_game.coe`：导入 `RAM_B`，330 个数据字；前 256 字为空，字符串和只读数据从 CPU 数据地址 `0x400` 开始。
+- 两个文件必须成对使用，否则标题、提示和 Game Over 字符串无法读取。
+- 生成命令：`make -C app/dino clean all`。

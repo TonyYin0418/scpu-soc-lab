@@ -42,7 +42,8 @@ endif
 
 BUILD_DIR := build
 TARGET    := dino
-OUT_COE   := ../../coe/app/dino/I_dino_game.coe
+OUT_I_COE := ../../coe/app/dino/I_dino_game.coe
+OUT_D_COE := ../../coe/app/dino/D_dino_game.coe
 
 ARCH_FLAGS := -march=rv32i -mabi=ilp32
 COMMON_FLAGS := $(TARGET_FLAGS) $(ARCH_FLAGS) -O2 -Wall -Wextra \
@@ -55,7 +56,7 @@ CFLAGS  := $(COMMON_FLAGS)
 ASFLAGS := $(COMMON_FLAGS)
 LDFLAGS := $(TARGET_FLAGS) $(LINKER_FLAGS) $(ARCH_FLAGS) -nostdlib \
            -nostartfiles -T linker.ld -Wl,--gc-sections -Wl,--no-relax \
-           -Wl,-Map=$(BUILD_DIR)/$(TARGET).map
+           -Wl,--no-check-sections -Wl,-Map=$(BUILD_DIR)/$(TARGET).map
 
 SRCS := $(wildcard src/*.c) $(wildcard src/*.S)
 OBJS := $(patsubst src/%,$(BUILD_DIR)/%,$(SRCS))
@@ -67,10 +68,12 @@ SMOKE_OBJ := $(BUILD_DIR)/toolchain_smoke.o
 SMOKE_ELF := $(BUILD_DIR)/toolchain_smoke.elf
 SMOKE_BIN := $(BUILD_DIR)/toolchain_smoke.bin
 SMOKE_ASM := $(BUILD_DIR)/toolchain_smoke.asm
+IMEM_BIN  := $(BUILD_DIR)/$(TARGET).imem.bin
+DMEM_BIN  := $(BUILD_DIR)/$(TARGET).dmem.bin
 
 .PHONY: all clean disasm verify toolchain-info toolchain-check
 
-all: $(OUT_COE) disasm verify
+all: $(OUT_I_COE) $(OUT_D_COE) disasm verify
 
 toolchain-info:
 	@echo "TOOLCHAIN=$(TOOLCHAIN)"
@@ -107,14 +110,17 @@ $(BUILD_DIR)/$(TARGET).elf: $(OBJS) linker.ld
 	@test -n "$(OBJS)" || { echo "error: add src/crt0.S and application sources before make"; exit 1; }
 	$(CC) $(LDFLAGS) $(OBJS) -o $@
 
-$(BUILD_DIR)/$(TARGET).bin: $(BUILD_DIR)/$(TARGET).elf
-	$(OBJCOPY) -O binary $< $@
+$(IMEM_BIN): $(BUILD_DIR)/$(TARGET).elf
+	$(OBJCOPY) -O binary --only-section=.text $< $@
 
-$(OUT_COE): $(BUILD_DIR)/$(TARGET).bin | $(BUILD_DIR)
-	@echo "memory_initialization_radix=16;" > $@
-	@echo "memory_initialization_vector=" >> $@
-	@hexdump -v -e '1/4 "%08x\n"' $< | awk '{printf "%s%s", (NR>1 ? "," : ""), $$0} END {print ";";}' >> $@
-	@echo "Generated $(OUT_COE)"
+$(DMEM_BIN): $(BUILD_DIR)/$(TARGET).elf
+	$(OBJCOPY) -O binary --only-section=.data $< $@
+
+$(OUT_I_COE): $(IMEM_BIN) tools/bin_to_coe.py | $(BUILD_DIR)
+	python3 tools/bin_to_coe.py --input $< --output $@
+
+$(OUT_D_COE): $(DMEM_BIN) tools/bin_to_coe.py | $(BUILD_DIR)
+	python3 tools/bin_to_coe.py --input $< --output $@ --prefix-bytes 1024
 
 disasm: $(BUILD_DIR)/$(TARGET).elf
 	$(OBJDUMP) -d -M no-aliases $< > $(BUILD_DIR)/$(TARGET).asm
@@ -128,4 +134,4 @@ verify: $(BUILD_DIR)/$(TARGET).elf
 
 clean:
 	rm -rf $(BUILD_DIR)
-	rm -f $(OUT_COE)
+	rm -f $(OUT_I_COE) $(OUT_D_COE)

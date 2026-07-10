@@ -273,12 +273,14 @@ python3 sim/run_top_board_sim.py --imem coe/board/I_vga_text_smoke.coe --sw 0000
   - `include/`：后续放 MMIO、VGA、键盘和游戏接口；
   - `assets/`：字符画/资源说明；
   - `tests/`：仿真和上板测试记录；
-  - `Makefile` / `linker.ld`：自动选择 GNU 交叉 GCC 或 Homebrew LLVM + LLD，后续生成 `coe/app/dino/I_dino_game.coe`；
+  - `Makefile` / `linker.ld`：自动选择 GNU 交叉 GCC 或 Homebrew LLVM + LLD，生成必须成对加载的 `I_dino_game.coe` 和 `D_dino_game.coe`；
   - `tests/toolchain_smoke.S`：只含 RV32I 基础指令的交叉编译环境自检。
 - 设计计划在 `docs/dino_game_plan.md`，包含游戏循环、VGA 文本模式方案、PS/2 按键方案、PR 协作规则和待确认问题。
 - 当前建议先做 80x60 ASCII 文本风格游戏，使用 `0xC0000000` VGA 文本显存和 `0xD0000000` PS/2 键盘 MMIO；后续若时间充足再扩展为图形 framebuffer。
-- 已完成 DINO 裸机启动和基础驱动：`crt0.S` 设置栈、复制 `.data`、清零 `.bss`；`vga_text.c` 提供清屏/字符串/数字绘制；`keyboard.c` 处理 PS/2 make/break/extended 扫描码和板载按钮。
-- 当前基础 smoke 使用 `make` 可生成 756 字节 RV32I 程序和 `coe/app/dino/I_dino_game.coe`；top 仿真在第 49177 周期写出启动标志 `D1000000`。
+- 已完成 DINO 裸机启动和基础驱动：`crt0.S` 设置栈并清零 `.bss`；`vga_text.c` 提供清屏/字符串/数字绘制；`keyboard.c` 同时读取 ready 数据和四字节扫描码历史，避免老师 PS/2 读确认时序导致丢键，并处理 make/break/extended 扫描码和板载按钮。
+- 已完成可运行游戏初版：标题、开始、跳跃、随机高度障碍、碰撞、五位计分、逐级加速、Game Over、Space/R/Enter 重开、VGA/数码管/LED 状态输出。
+- SoC 是 Harvard 结构，普通 `lw` 无法读取指令 ROM 中的字符串；构建现生成 `I_dino_game.coe`（759 字）和 `D_dino_game.coe`（330 字），必须分别加载到 `ROM_D`/`RAM_B`。
+- `SW[14]=1` 是 DINO 仿真加速模式。top 自动验收已证明标题→运行→碰撞→Game Over→R 重开，以及第二次 Space 使角色升空；正常上板必须保持 `SW[14]=0`。
 - `ROM_D` 使用 Distributed Memory Generator，`RAM_B` 使用 Block Memory Generator；两者必须在 Vivado 中生成，仓库当前只有连接接口，没有伪造可综合实现。
 - `SCPU` 与 CPU 外围系统必须保持边界清晰。第一步只验证老师 EDF 能在外围系统中运行；替换自己的 CPU 时，接口需匹配 `edf/SCPU.v`，不要修改外围网表。
 - 当前流水线分支的 `IO/clk_div.v` 在 100 MHz 输入下固定使用 `clkdiv[0]` 经 `BUFG` 后作为 CPU 时钟，频率 50 MHz。`SW[2]` 端口保留给原理图接口兼容，但当前不再用于运行时快/慢时钟选择。

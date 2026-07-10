@@ -17,6 +17,8 @@ void keyboard_reset(keyboard_state_t *state)
 {
     state->break_pending = 0u;
     state->extended_pending = 0u;
+    state->reserved = 0u;
+    state->last_scancode = mmio_read32(MMIO_PS2_SCANCODE);
 }
 
 uint32_t keyboard_poll(keyboard_state_t *state)
@@ -24,17 +26,21 @@ uint32_t keyboard_poll(keyboard_state_t *state)
     uint32_t action = INPUT_NONE;
     uint32_t switch_button = mmio_read32(MMIO_SWITCH_BUTTON);
     uint32_t ps2 = mmio_read32(MMIO_PS2_KEY);
+    uint32_t scancode = mmio_read32(MMIO_PS2_SCANCODE);
     uint8_t code;
 
     if (((switch_button >> 16) & 0x1fu) != 0u) {
         action |= INPUT_JUMP | INPUT_START;
     }
 
-    if ((ps2 & PS2_READY_MASK) == 0u) {
+    if (scancode != state->last_scancode) {
+        state->last_scancode = scancode;
+        code = (uint8_t)(scancode & PS2_CODE_MASK);
+    } else if ((ps2 & PS2_READY_MASK) != 0u) {
+        code = (uint8_t)(ps2 & PS2_CODE_MASK);
+    } else {
         return action;
     }
-
-    code = (uint8_t)(ps2 & PS2_CODE_MASK);
     if (code == KEY_BREAK) {
         state->break_pending = 1u;
         return action;

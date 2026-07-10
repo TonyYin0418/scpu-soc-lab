@@ -11,6 +11,8 @@
 typedef struct {
     uint8_t break_pending;
     uint8_t extended_pending;
+    uint16_t reserved;
+    uint32_t last_scancode;
 } keyboard_state_t;
 
 void keyboard_reset(keyboard_state_t *state);
