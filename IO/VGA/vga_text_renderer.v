@@ -35,10 +35,32 @@ module vga_text_renderer(
     );
 
     wire pixel_on = active && font_bits[3'd7 - font_col];
-    wire [3:0] intensity = attr[7:4];
 
-    assign red   = pixel_on ? intensity : 4'h0;
-    assign green = pixel_on ? intensity : 4'h0;
-    assign blue  = pixel_on ? intensity : 4'h0;
+    // 软件沿用一个字节的文本属性。高半字节是前景色编号，低半字节
+    // 预留给后续背景色/效果；没有命中调色板的编号退化为同亮度灰色，
+    // 因而仍兼容早期只把属性当作亮度使用的程序。
+    reg [3:0] foreground_r;
+    reg [3:0] foreground_g;
+    reg [3:0] foreground_b;
+
+    always @(*) begin
+        case (attr[7:4])
+            4'h7: begin foreground_r = 4'h7; foreground_g = 4'h7; foreground_b = 4'h7; end // dim
+            4'ha: begin foreground_r = 4'h2; foreground_g = 4'hd; foreground_b = 4'h4; end // green
+            4'hb: begin foreground_r = 4'h2; foreground_g = 4'hc; foreground_b = 4'he; end // cyan
+            4'hc: begin foreground_r = 4'he; foreground_g = 4'h3; foreground_b = 4'h2; end // red
+            4'he: begin foreground_r = 4'hf; foreground_g = 4'hc; foreground_b = 4'h2; end // yellow
+            4'hf: begin foreground_r = 4'hf; foreground_g = 4'hf; foreground_b = 4'hf; end // white
+            default: begin
+                foreground_r = attr[7:4];
+                foreground_g = attr[7:4];
+                foreground_b = attr[7:4];
+            end
+        endcase
+    end
+
+    assign red   = pixel_on ? foreground_r : 4'h0;
+    assign green = pixel_on ? foreground_g : 4'h0;
+    assign blue  = pixel_on ? foreground_b : 4'h0;
 
 endmodule

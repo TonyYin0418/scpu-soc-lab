@@ -249,12 +249,12 @@ python3 sim/run_top_board_sim.py \
 - `constraints/icf.xdc` 已按 `Nexys-A7-100T-Master.xdc` 增加 VGA 管脚约束。
 - VGA 软件地址约定：
   - `0xC0000000 + (row * 80 + col) * 4` 写一个 16 位文本单元；
-  - 文本单元格式为 `{颜色属性[15:8], ASCII[7:0]}`，当前 renderer 取属性高 4 位作为 RGB 灰度强度，例如 `16'hff41` 显示白色 `A`；
+  - 文本单元格式为 `{颜色属性[15:8], ASCII[7:0]}`；属性高半字节 `7/A/B/C/E/F` 分别映射为暗灰/绿/青/红/黄/白，其他编号兼容为同亮度灰色，例如 `16'hff41` 显示白色 `A`；
   - `SW[15]=1` 强制绿色全屏 Test 通道，用于排查线缆、管脚和同步；
   - `SW[15]=0` 显示 CPU 可写文本显存，复位后默认左上角显示 `SCPU VGA READY`。
 - `IO/MIO_BUS.v` 和 `sim/board_sim_models.v` 已把 `0xC...` 地址段排除出普通 RAM，`board/top.v` 也用 `data_ram_we` 门控 RAM 写使能，避免 MMIO 写入误伤数据 RAM。
 - `coe/board/I_vga_text_smoke.coe` 是 VGA 文本 MMIO smoke 程序，会向 cell0/cell1 写入 `OK`。
-- 当前在 `feature/dino-game-optimization` 分支优化已合入 main 的 dinosaur 游戏。第一道门禁已完成：`game/Makefile` 自动选择 GNU 或 Homebrew LLVM/LLD，使用 `-Os` 后当前游戏从 644 words 降至 501 words，并强制检查 4 KiB ROM、RV32I-only、无未解析符号、禁止 M 扩展和禁止无法由 Harvard 数据口读取的字符串/初始化数据；`game/start.S` 已补 `.bss` 清零。
+- 当前在 `feature/dino-game-optimization` 分支优化已合入 main 的 dinosaur 游戏。第一道门禁已完成：`game/Makefile` 自动选择 GNU 或 Homebrew LLVM/LLD，使用 `-Os` 后构建基线从 644 words 降至 501 words，并强制检查 4 KiB ROM、RV32I-only、无未解析符号、禁止 M 扩展和禁止无法由 Harvard 数据口读取的字符串/初始化数据；`game/start.S` 已补 `.bss` 清零。PS/2 软件现按 make/break/extended 状态处理并在帧等待期间持续采样，移动元素改为局部擦除。
 - 验证命令：
 
 ```bash

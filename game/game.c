@@ -11,8 +11,6 @@
 #define VGA_ROWS      60u
 #define GROUND_ROW    49
 #define DINO_COL      10
-#define OBSTACLE_MAX_H 5
-
 #define ATTR_DIM      0x70u
 #define ATTR_WHITE    0xffu
 #define ATTR_GREEN    0xaau
@@ -22,7 +20,9 @@
 
 #define KEY_SPACE     0x29u
 #define KEY_W         0x1du
+#define KEY_S         0x1bu
 #define KEY_UP        0x75u
+#define KEY_DOWN      0x72u
 #define KEY_R         0x2du
 #define KEY_ENTER     0x5au
 #define KEY_BREAK     0xf0u
@@ -30,6 +30,18 @@
 
 #define ACTION_JUMP   0x01u
 #define ACTION_RESTART 0x02u
+
+typedef struct {
+    uint32_t scan_log;
+    unsigned int break_pending;
+    unsigned int ext_pending;
+    unsigned int jump_held;
+    unsigned int crouch_held;
+    unsigned int button_held;
+    unsigned int actions;
+} InputState;
+
+static InputState input;
 
 static inline void mmio_write(uint32_t addr, uint32_t value)
 {
@@ -55,18 +67,6 @@ static inline void vga_put(unsigned int row, unsigned int col, unsigned char ch,
 static inline void vga_blank(unsigned int row, unsigned int col)
 {
     vga_put(row, col, ' ', 0x00u);
-}
-
-__attribute__((noinline)) static void delay(unsigned int cycles)
-{
-    __asm__ volatile (
-        "1:\n"
-        "addi %0, %0, -1\n"
-        "bnez %0, 1b\n"
-        : "+r"(cycles)
-        :
-        : "memory"
-    );
 }
 
 static void draw_word_dino(void)
@@ -210,15 +210,16 @@ static void draw_obstacle(int x, int h, unsigned char attr)
     }
 }
 
-static void clear_obstacle_band(void)
+static void erase_obstacle(int x, int h)
 {
-    unsigned int row;
-    unsigned int col;
+    int i;
 
-    for (row = (unsigned int)(GROUND_ROW - OBSTACLE_MAX_H + 1); row <= (unsigned int)GROUND_ROW; row++) {
-        for (col = 0; col < VGA_COLS; col++) {
-            vga_blank(row, col);
-        }
+    if (x < 0 || x >= (int)VGA_COLS) {
+        return;
+    }
+
+    for (i = 0; i < h; i++) {
+        vga_blank((unsigned int)(GROUND_ROW - i), (unsigned int)x);
     }
 }
 
@@ -228,40 +229,83 @@ static uint32_t lfsr_next(uint32_t value)
     return (value >> 1) | (bit << 15);
 }
 
-static unsigned int poll_input(unsigned int *break_pending, unsigned int *ext_pending)
+static void process_scan_code(InputState *input, unsigned int key)
 {
-    unsigned int action = 0;
+    unsigned int released;
+    unsigned int extended;
+    unsigned int is_jump;
+    unsigned int is_crouch;
+
+    if (key == KEY_EXT) {
+        input->ext_pending = 1u;
+        return;
+    }
+    if (key == KEY_BREAK) {
+        input->break_pending = 1u;
+        return;
+    }
+
+    released = input->break_pending;
+    extended = input->ext_pending;
+    input->break_pending = 0u;
+    input->ext_pending = 0u;
+
+    is_jump = ((extended == 0u) && (key == KEY_SPACE || key == KEY_W)) ||
+              ((extended != 0u) && key == KEY_UP);
+    is_crouch = ((extended == 0u) && key == KEY_S) ||
+                ((extended != 0u) && key == KEY_DOWN);
+
+    if (is_jump != 0u) {
+        if (released != 0u) {
+            input->jump_held = 0u;
+        } else if (input->jump_held == 0u) {
+            input->jump_held = 1u;
+            input->actions |= ACTION_JUMP;
+        }
+    } else if (is_crouch != 0u) {
+        input->crouch_held = (released == 0u);
+    } else if (released == 0u && extended == 0u &&
+               (key == KEY_R || key == KEY_ENTER)) {
+        input->actions |= ACTION_RESTART;
+    }
+}
+
+static void poll_input(InputState *input)
+{
     uint32_t sw_btn = mmio_read(MMIO_SW_BTN);
     uint32_t btn = (sw_btn >> 16) & 0x1fu;
-    uint32_t ps2 = mmio_read(MMIO_PS2_KEY);
+    uint32_t log;
 
-    if (btn != 0u) {
-        action |= ACTION_JUMP;
+    (void)mmio_read(MMIO_PS2_KEY);
+    log = mmio_read(MMIO_PS2_LOG);
+
+    if (btn != 0u && input->button_held == 0u) {
+        input->actions |= ACTION_JUMP;
     }
+    input->button_held = (btn != 0u);
 
-    if (((ps2 >> 8) & 1u) != 0u) {
-        uint32_t key = ps2 & 0xffu;
-
-        if (key == KEY_BREAK) {
-            *break_pending = 1u;
-        } else if (key == KEY_EXT) {
-            *ext_pending = 1u;
-        } else if (*break_pending != 0u) {
-            *break_pending = 0u;
-            *ext_pending = 0u;
-        } else {
-            if (key == KEY_R || key == KEY_ENTER) {
-                action |= ACTION_RESTART;
-            } else if (key == KEY_SPACE || key == KEY_W || key == KEY_UP || *ext_pending != 0u) {
-                action |= ACTION_JUMP;
-            } else {
-                action |= ACTION_JUMP;
-            }
-            *ext_pending = 0u;
-        }
+    // 读取 KEY 会确认 ready；扫描日志则给每个已确认字节提供稳定的变化标志。
+    // 因而同一按键不会因 MMIO 读时序重复处理，未知扫描码也不会触发动作。
+    if (log != input->scan_log) {
+        input->scan_log = log;
+        process_scan_code(input, log & 0xffu);
     }
+}
 
-    return action;
+static unsigned int take_actions(InputState *input)
+{
+    unsigned int actions = input->actions;
+
+    input->actions = 0u;
+    return actions;
+}
+
+static void wait_for_frame(InputState *input, unsigned int polls)
+{
+    while (polls != 0u) {
+        poll_input(input);
+        polls--;
+    }
 }
 
 static unsigned int collides(int dino_y, int obs_x, int obs_h)
@@ -283,15 +327,16 @@ int main(void)
     int obstacle_x = 74;
     int obstacle_h = 3;
     int prev_dino_y = 0;
+    int prev_obstacle_x = obstacle_x;
+    int prev_obstacle_h = obstacle_h;
     unsigned int score0 = 0;
     unsigned int score1 = 0;
     unsigned int score2 = 0;
     unsigned int score3 = 0;
     unsigned int game_over = 0;
-    unsigned int break_pending = 0;
-    unsigned int ext_pending = 0;
     unsigned int speed_step = 0;
     uint32_t rnd = 0xace1u;
+    input.scan_log = mmio_read(MMIO_PS2_LOG);
 
     clear_screen();
     draw_static_scene();
@@ -300,7 +345,10 @@ int main(void)
     draw_obstacle(obstacle_x, obstacle_h, ATTR_GREEN);
 
     for (;;) {
-        unsigned int action = poll_input(&break_pending, &ext_pending);
+        unsigned int action;
+
+        poll_input(&input);
+        action = take_actions(&input);
 
         if (game_over != 0u) {
             if ((action & (ACTION_RESTART | ACTION_JUMP)) != 0u) {
@@ -316,15 +364,17 @@ int main(void)
                 score3 = 0;
                 game_over = 0;
                 speed_step = 0;
+                input.actions = 0u;
 
                 clear_screen();
                 draw_static_scene();
                 draw_score(score3, score2, score1, score0);
                 draw_dino(dino_y, ATTR_WHITE);
                 draw_obstacle(obstacle_x, obstacle_h, ATTR_GREEN);
+                mmio_write(MMIO_LED, 0u);
             }
 
-            delay(120000u);
+            wait_for_frame(&input, 10000u);
             continue;
         }
 
@@ -345,6 +395,8 @@ int main(void)
             }
         }
 
+        prev_obstacle_x = obstacle_x;
+        prev_obstacle_h = obstacle_h;
         obstacle_x = obstacle_x - 1;
         if (obstacle_x < 1) {
             rnd = lfsr_next(rnd);
@@ -353,7 +405,7 @@ int main(void)
         }
 
         erase_dino(prev_dino_y);
-        clear_obstacle_band();
+        erase_obstacle(prev_obstacle_x, prev_obstacle_h);
 
         if (collides(dino_y, obstacle_x, obstacle_h) != 0u) {
             game_over = 1u;
@@ -374,11 +426,11 @@ int main(void)
         }
 
         if (speed_step < 4u) {
-            delay(2200000u);
+            wait_for_frame(&input, 120000u);
         } else if (speed_step < 8u) {
-            delay(1700000u);
+            wait_for_frame(&input, 90000u);
         } else {
-            delay(1300000u);
+            wait_for_frame(&input, 65000u);
         }
     }
 }

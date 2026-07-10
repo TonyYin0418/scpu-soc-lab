@@ -58,9 +58,11 @@ addr = MMIO_VGA + (row * 80 + col) * 4;
 data = (attr << 8) | ascii;
 ```
 
-`MMIO_PS2_KEY` returns `{23'b0, ps2_ready, ps2_key}` on the current
-PS/2 branch. The game treats Space, W, and Up as jump keys, and R or Enter as
-restart keys.
+`MMIO_PS2_KEY` returns `{23'b0, ps2_ready, ps2_key}`. The game acknowledges
+that register and uses `MMIO_PS2_LOG` as the stable event history. Make/break
+and extended prefixes are tracked explicitly; unknown scan codes are ignored.
+Space, W, and Up are jump keys, while R or Enter restart the game. S and Down
+already have held-state tracking for the crouch gameplay milestone.
 
 ## Game Scope
 
@@ -72,6 +74,11 @@ This is a text-mode Chrome-dino style runner:
 - collision shows `GAME OVER`;
 - R/Enter/Space restarts;
 - score is shown on VGA and seven-segment display.
+
+The current polling build continues sampling PS/2 while waiting for the next
+frame, so break/extended sequences are not hidden by a long blocking delay.
+Moving objects erase only their previous occupied cells instead of clearing a
+five-row screen band every frame.
 
 ## Software Rules
 
