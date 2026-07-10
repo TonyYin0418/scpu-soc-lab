@@ -11,6 +11,7 @@
 #define VGA_ROWS      60u
 #define GROUND_ROW    49
 #define DINO_COL      10
+#define OBSTACLE_MAX_H 5
 
 #define ATTR_DIM      0x70u
 #define ATTR_WHITE    0xffu
@@ -56,12 +57,16 @@ static inline void vga_blank(unsigned int row, unsigned int col)
     vga_put(row, col, ' ', 0x00u);
 }
 
-__attribute__((noinline)) static void delay(volatile unsigned int cycles)
+__attribute__((noinline)) static void delay(unsigned int cycles)
 {
-    while (cycles != 0) {
-        __asm__ volatile ("nop");
-        cycles--;
-    }
+    __asm__ volatile (
+        "1:\n"
+        "addi %0, %0, -1\n"
+        "bnez %0, 1b\n"
+        : "+r"(cycles)
+        :
+        : "memory"
+    );
 }
 
 static void draw_word_dino(void)
@@ -109,14 +114,6 @@ static void draw_game_over(void)
     vga_put(12, 40, 'V', ATTR_RED);
     vga_put(12, 41, 'E', ATTR_RED);
     vga_put(12, 42, 'R', ATTR_RED);
-}
-
-static void erase_game_over(void)
-{
-    unsigned int col;
-    for (col = 32; col < 46; col++) {
-        vga_blank(12, col);
-    }
 }
 
 static void clear_screen(void)
@@ -213,16 +210,15 @@ static void draw_obstacle(int x, int h, unsigned char attr)
     }
 }
 
-static void erase_obstacle(int x, int h)
+static void clear_obstacle_band(void)
 {
-    int i;
+    unsigned int row;
+    unsigned int col;
 
-    if (x < 0 || x >= (int)VGA_COLS) {
-        return;
-    }
-
-    for (i = 0; i < h; i++) {
-        vga_blank((unsigned int)(GROUND_ROW - i), (unsigned int)x);
+    for (row = (unsigned int)(GROUND_ROW - OBSTACLE_MAX_H + 1); row <= (unsigned int)GROUND_ROW; row++) {
+        for (col = 0; col < VGA_COLS; col++) {
+            vga_blank(row, col);
+        }
     }
 }
 
@@ -254,11 +250,12 @@ static unsigned int poll_input(unsigned int *break_pending, unsigned int *ext_pe
             *break_pending = 0u;
             *ext_pending = 0u;
         } else {
-            if (key == KEY_SPACE || key == KEY_W || key == KEY_UP || *ext_pending != 0u) {
-                action |= ACTION_JUMP;
-            }
             if (key == KEY_R || key == KEY_ENTER) {
                 action |= ACTION_RESTART;
+            } else if (key == KEY_SPACE || key == KEY_W || key == KEY_UP || *ext_pending != 0u) {
+                action |= ACTION_JUMP;
+            } else {
+                action |= ACTION_JUMP;
             }
             *ext_pending = 0u;
         }
@@ -286,8 +283,6 @@ int main(void)
     int obstacle_x = 74;
     int obstacle_h = 3;
     int prev_dino_y = 0;
-    int prev_obstacle_x = 74;
-    int prev_obstacle_h = 3;
     unsigned int score0 = 0;
     unsigned int score1 = 0;
     unsigned int score2 = 0;
@@ -309,18 +304,12 @@ int main(void)
 
         if (game_over != 0u) {
             if ((action & (ACTION_RESTART | ACTION_JUMP)) != 0u) {
-                erase_game_over();
-                erase_dino(dino_y);
-                erase_obstacle(obstacle_x, obstacle_h);
-
                 dino_y = 0;
                 dino_v = 0;
                 jumping = 0;
                 obstacle_x = 74;
                 obstacle_h = 3;
                 prev_dino_y = dino_y;
-                prev_obstacle_x = obstacle_x;
-                prev_obstacle_h = obstacle_h;
                 score0 = 0;
                 score1 = 0;
                 score2 = 0;
@@ -328,6 +317,7 @@ int main(void)
                 game_over = 0;
                 speed_step = 0;
 
+                clear_screen();
                 draw_static_scene();
                 draw_score(score3, score2, score1, score0);
                 draw_dino(dino_y, ATTR_WHITE);
@@ -344,9 +334,6 @@ int main(void)
         }
 
         prev_dino_y = dino_y;
-        prev_obstacle_x = obstacle_x;
-        prev_obstacle_h = obstacle_h;
-
         if (jumping != 0) {
             dino_y = dino_y + dino_v;
             dino_v = dino_v - 1;
@@ -366,7 +353,7 @@ int main(void)
         }
 
         erase_dino(prev_dino_y);
-        erase_obstacle(prev_obstacle_x, prev_obstacle_h);
+        clear_obstacle_band();
 
         if (collides(dino_y, obstacle_x, obstacle_h) != 0u) {
             game_over = 1u;
@@ -387,11 +374,11 @@ int main(void)
         }
 
         if (speed_step < 4u) {
-            delay(220000u);
+            delay(2200000u);
         } else if (speed_step < 8u) {
-            delay(170000u);
+            delay(1700000u);
         } else {
-            delay(130000u);
+            delay(1300000u);
         }
     }
 }

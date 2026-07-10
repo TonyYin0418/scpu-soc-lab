@@ -481,13 +481,14 @@ edf/SSeg7.edf
 5. 在 Hardware Manager 中 **Open Target → Auto Connect → Program Device**。
 6. 复位后观察数码管输出；当前 CPU 时钟固定为 50 MHz，`SW[2]` 不再用于切换 CPU 快慢。
 
-当前 `feature/vga-display` 分支还新增了 VGA 显示器输出。Vivado Design Sources 需要额外加入：
+当前 `feature/vga-redesign` 分支重新实现了 VGA 文本显示输出。Vivado Design Sources 需要额外加入：
 
 ```text
-IO/VGA/VGA_Scan.v
-IO/VGA/VGAIO.v
-IO/VGA/vga_font_roms.v
+IO/VGA/vga_timing.v
+IO/VGA/vga_font_rom.v
 IO/VGA/vga_text_ram.v
+IO/VGA/vga_text_renderer.v
+IO/VGA/vga_top.v
 ```
 
 顶层新增端口：
@@ -500,7 +501,7 @@ VGA_HS
 VGA_VS
 ```
 
-不要把 `docs/reference/vga/*.v` 加入 Vivado Design Sources；那里只保存老师原始参考文件，实际编译使用 `IO/VGA/` 下整理后的版本。
+不要把 `docs/reference/vga/*.v` 加入 Vivado Design Sources；那里只保存老师原始参考文件。当前 active 编译路径使用 `IO/VGA/` 下按职责拆分后的重新实现版本。
 
 同时把下面这个字库初始化文件加入 Vivado 工程，或至少保证综合运行目录能找到它：
 
@@ -520,7 +521,7 @@ VGA 文本显存地址约定：
 ```text
 base = 0xC0000000
 addr = base + (row * 80 + col) * 4
-data[15:8] = 颜色属性，8'hFF 可作为白色前景
+data[15:8] = 颜色属性，当前取高 4 位作为 RGB 灰度强度，8'hFF 可作为白色前景
 data[7:0]  = ASCII 字符码
 ```
 
@@ -531,9 +532,9 @@ data[7:0]  = ASCII 字符码
 向 0xC0000004 写 0x0000ff42  # 第 2 个字符显示白色 B
 ```
 
-当前只保证 8x8 ASCII 文本模式，80 列 × 60 行。`Hzk16.coe` 和 16x16 中文字库接口已保留，但复杂中文显示不是当前门禁。
+当前只保证 8x8 ASCII 文本模式，80 列 × 60 行。`Hzk16.coe` 暂不进入 active 编译路径，复杂中文显示不是当前门禁。
 
-VGA 使用老师提供的 `VGAIO/VGA_Scan` 路径。`VGAIO` 内部用 100 MHz 主时钟分频得到约 25 MHz VGA 扫描时钟；这和老师代码一致。若后续遇到时序问题，再考虑把 VGA 像素时钟改成 MMCM/Clocking Wizard 生成的标准 25.175 MHz。
+VGA 使用 `vga_timing` 在 100 MHz 主时钟下生成 4 分频 clock-enable，等效 25 MHz 像素节拍；没有把分频计数器输出作为新的派生时钟。若后续遇到显示器兼容性或时序问题，再考虑用 MMCM/Clocking Wizard 生成标准 25.175 MHz 像素时钟。
 
 VGA 相关 top 级仿真：
 
