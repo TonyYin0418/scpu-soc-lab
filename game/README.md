@@ -61,19 +61,26 @@ data = (attr << 8) | ascii;
 `MMIO_PS2_KEY` returns `{23'b0, ps2_ready, ps2_key}`. The game acknowledges
 that register and uses `MMIO_PS2_LOG` as the stable event history. Make/break
 and extended prefixes are tracked explicitly; unknown scan codes are ignored.
-Space, W, and Up are jump keys, while R or Enter restart the game. S and Down
-already have held-state tracking for the crouch gameplay milestone.
+Space, W, and Up are jump keys, S and Down are held crouch keys, P toggles
+pause, and R or Enter returns to the ready state.
 
 ## Game Scope
 
 This is a text-mode Chrome-dino style runner:
 
 - dino is fixed near the left side;
-- cactus obstacles scroll from right to left;
+- cactus and low-flying bird obstacles scroll from right to left;
 - Space/W/Up jumps;
+- S/Down crouches on the ground and accelerates descent in the air;
+- P pauses/resumes the run;
 - collision shows `GAME OVER`;
 - R/Enter/Space restarts;
 - score is shown on VGA and seven-segment display.
+
+The dinosaur, crouch pose, cactus, and bird use custom 8x8 pixel-art tiles in
+`IO/VGA/vga_font_rom.v`; they are not approximated with printable characters.
+The game has READY, RUNNING, PAUSED, and GAME OVER states. Crouching clears a
+low bird but deliberately does not clear a cactus.
 
 The current polling build continues sampling PS/2 while waiting for the next
 frame, so break/extended sequences are not hidden by a long blocking delay.

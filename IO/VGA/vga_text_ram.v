@@ -7,8 +7,8 @@
 //
 // 每个单元 16 位：
 //   [7:0]   ASCII 字符码
-//   [15:8]  前景颜色属性。当前 renderer 取 attr[7:4] 作为 4-bit 灰度，
-//           同时送到 RGB 三通道，因此 8'hff 显示白色。
+//   [15:8]  前景颜色属性。renderer 把高半字节解释为调色板编号，
+//           其中 7/A/B/C/E/F 为暗灰/绿/青/红/黄/白。
 module vga_text_ram(
     input             cpu_clk,
     input             cpu_we,

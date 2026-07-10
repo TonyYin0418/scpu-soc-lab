@@ -734,8 +734,23 @@ make install-coe
 ```
 
 `make` 会验证 RV32I 属性、禁止 M 扩展、无未解析符号以及 1024-word ROM
-容量。`make install-coe` 更新 `coe/board/I_dino_game.coe`。当前优化基线为
-501/1024 words；Vivado 的 `ROM_D` 需要重新选择更新后的 COE 后重新生成 IP。
+容量。`make install-coe` 更新 `coe/board/I_dino_game.coe`。当前完整玩法版本为
+832/1024 words：包含自定义恐龙/仙人掌/飞鸟像素字模、站立与下蹲碰撞盒、
+READY/RUNNING/PAUSED/GAME OVER 状态和局部重绘。操作键为 Space/W/↑ 跳跃、
+S/↓ 下蹲、P 暂停、R/Enter 回到 READY；空中按住下蹲会加速落地。
+Vivado 的 `ROM_D` 需要重新选择更新后的 COE 后重新生成 IP。
+
+对应的本地门禁为：
+
+```bash
+cc -std=c11 -Wall -Wextra -Werror sim/game_logic_test.c -o build/game_logic_test
+build/game_logic_test
+iverilog -g2012 -Wall -s vga_text_renderer_tb -o build/vga_text_renderer_tb \
+  sim/vga_text_renderer_tb.v IO/VGA/vga_font_rom.v IO/VGA/vga_text_renderer.v
+vvp -n build/vga_text_renderer_tb
+python3 sim/run_top_board_sim.py --imem game/build/game.coe \
+  --max-cycles 300000 --check-dino-ready
+```
 
 老师提供的工具位于 `asm2coe/`，需要 RISC-V GNU 工具链。Linux/WSL 中执行：
 

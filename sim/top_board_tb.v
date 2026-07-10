@@ -37,11 +37,14 @@ module top_board_tb;
     integer sw_value;
     integer check_vga;
     integer check_vga_text;
+    integer check_dino_ready;
     integer vga_green_samples;
     integer vga_hs_edges;
     integer vga_vs_edges;
     integer saw_vga_o;
     integer saw_vga_k;
+    reg [5:0] dino_tiles;
+    reg [4:0] ready_letters;
     integer saw_1111;
     integer saw_2222;
     integer saw_3333;
@@ -92,11 +95,14 @@ module top_board_tb;
         sw_value = 16'h0000; // 默认 SW[7:5]=000，看程序写入的显示通道 data0。
         check_vga = 0;
         check_vga_text = 0;
+        check_dino_ready = 0;
         vga_green_samples = 0;
         vga_hs_edges = 0;
         vga_vs_edges = 0;
         saw_vga_o = 0;
         saw_vga_k = 0;
+        dino_tiles = 6'b0;
+        ready_letters = 5'b0;
         saw_1111 = 0;
         saw_2222 = 0;
         saw_3333 = 0;
@@ -119,6 +125,7 @@ module top_board_tb;
         dump_vcd = $test$plusargs("DUMP_VCD");
         check_vga = $test$plusargs("CHECK_VGA_GREEN");
         check_vga_text = $test$plusargs("CHECK_VGA_TEXT");
+        check_dino_ready = $test$plusargs("CHECK_DINO_READY");
         void'($value$plusargs("SW=%h", sw_value));
         void'($value$plusargs("IMEM=%s", imem_file));
         void'($value$plusargs("DMEM=%s", dmem_file));
@@ -150,6 +157,8 @@ module top_board_tb;
             $display("[TOP_SIM] CHECK_VGA enabled: expect SW[15]=1 green test screen");
         if (check_vga_text)
             $display("[TOP_SIM] CHECK_VGA_TEXT enabled: expect writes cell0=ff4f, cell1=ff4b");
+        if (check_dino_ready)
+            $display("[TOP_SIM] CHECK_DINO_READY enabled: expect custom dino tiles and READY state");
         if (force_int_start >= 0) begin
             force U_TOP.counter0_OUT = 1'b0;
             $display("[TOP_SIM] timer INT held low until cycle %0d", force_int_start);
@@ -259,6 +268,21 @@ module top_board_tb;
                     saw_vga_k = 1;
                 if (check_vga_text && saw_vga_o && saw_vga_k) begin
                     $display("[TOP_SIM][PASS] VGA text MMIO wrote OK into cells 0 and 1");
+                    $finish;
+                end
+                if ((U_TOP.addr_bus[14:2] == 13'd3770) && (U_TOP.Cpu_data2bus[7:0] == 8'h01)) dino_tiles[0] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd3771) && (U_TOP.Cpu_data2bus[7:0] == 8'h02)) dino_tiles[1] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd3850) && (U_TOP.Cpu_data2bus[7:0] == 8'h03)) dino_tiles[2] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd3851) && (U_TOP.Cpu_data2bus[7:0] == 8'h04)) dino_tiles[3] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd3930) && (U_TOP.Cpu_data2bus[7:0] == 8'h05)) dino_tiles[4] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd3931) && (U_TOP.Cpu_data2bus[7:0] == 8'h06)) dino_tiles[5] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd995) && (U_TOP.Cpu_data2bus[7:0] == 8'h52)) ready_letters[0] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd996) && (U_TOP.Cpu_data2bus[7:0] == 8'h45)) ready_letters[1] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd997) && (U_TOP.Cpu_data2bus[7:0] == 8'h41)) ready_letters[2] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd998) && (U_TOP.Cpu_data2bus[7:0] == 8'h44)) ready_letters[3] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd999) && (U_TOP.Cpu_data2bus[7:0] == 8'h59)) ready_letters[4] = 1'b1;
+                if (check_dino_ready && (&dino_tiles) && (&ready_letters)) begin
+                    $display("[TOP_SIM][PASS] dino game reached READY with custom pixel tiles");
                     $finish;
                 end
             end

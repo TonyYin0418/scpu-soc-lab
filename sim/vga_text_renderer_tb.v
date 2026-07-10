@@ -9,6 +9,10 @@ module vga_text_renderer_tb;
     wire [3:0]  red;
     wire [3:0]  green;
     wire [3:0]  blue;
+    integer glyph;
+    integer row;
+    integer col;
+    integer lit_pixels;
 
     vga_text_renderer dut(
         .x(x), .y(y), .active(active), .cell_data(cell_data),
@@ -43,6 +47,23 @@ module vga_text_renderer_tb;
         expect_rgb(8'hcc, 4'he, 4'h3, 4'h2);
         expect_rgb(8'hee, 4'hf, 4'hc, 4'h2);
         expect_rgb(8'hff, 4'hf, 4'hf, 4'hf);
+
+        // Game tiles 0x01..0x10 must all contain visible bitmap data.
+        for (glyph = 1; glyph <= 16; glyph = glyph + 1) begin
+            lit_pixels = 0;
+            cell_data = {8'hff, glyph[7:0]};
+            for (row = 0; row < 8; row = row + 1) begin
+                for (col = 0; col < 8; col = col + 1) begin
+                    x = col;
+                    y = row;
+                    #1;
+                    if ({red, green, blue} == 12'hfff)
+                        lit_pixels = lit_pixels + 1;
+                end
+            end
+            if (lit_pixels < 6)
+                $fatal(1, "[VGA_GLYPH][FAIL] glyph=%02x pixels=%0d", glyph, lit_pixels);
+        end
 
         active = 1'b0;
         #1;
