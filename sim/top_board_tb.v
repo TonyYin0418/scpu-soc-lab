@@ -314,10 +314,22 @@ module top_board_tb;
                 if ((U_TOP.addr_bus[14:2] == 13'd997) && (U_TOP.Cpu_data2bus[7:0] == 8'h41)) ready_letters[2] = 1'b1;
                 if ((U_TOP.addr_bus[14:2] == 13'd998) && (U_TOP.Cpu_data2bus[7:0] == 8'h44)) ready_letters[3] = 1'b1;
                 if ((U_TOP.addr_bus[14:2] == 13'd999) && (U_TOP.Cpu_data2bus[7:0] == 8'h59)) ready_letters[4] = 1'b1;
-                if (check_dino_ready && (&dino_tiles) && (&ready_letters)) begin
-                    $display("[TOP_SIM][PASS] dino game reached READY with custom pixel tiles");
-                    $finish;
-                end
+            end
+
+            if (check_dino_ready && (&dino_tiles) && (&ready_letters) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[3770] == 16'hff01) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[3771] == 16'hff02) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[3850] == 16'hff03) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[3851] == 16'hff04) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[3930] == 16'hff05) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[3931] == 16'hff06) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[995]  == 16'hee52) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[999]  == 16'hee59) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[100]  == 16'h0020) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[2000] == 16'h0020) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[4500] == 16'h0020)) begin
+                $display("[TOP_SIM][PASS] dino READY framebuffer is stable and uncorrupted");
+                $finish;
             end
 
             if (check_vga) begin

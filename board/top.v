@@ -276,7 +276,10 @@ module top(
     vga_top U12_VGA_TOP(
         .clk       (clk),
         .rst       (rst),
-        .cpu_clk   (Clk_IO),
+        // CPU 总线在 negedge Clk_CPU 更新。显存改在下一个 posedge
+        // Clk_CPU 写入，留出半周期建立时间；不能使用 ~Clk_CPU，后者
+        // 与总线更新落在同一边沿，会在实板上造成随机显存写坏和闪烁。
+        .cpu_clk   (Clk_CPU),
         .cpu_we    (vga_text_we),
         .cpu_waddr (vga_text_addr),
         .cpu_wdata (Cpu_data2bus[15:0]),
