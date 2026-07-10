@@ -7,16 +7,17 @@ The game targets the text-mode VGA and PS/2 MMIO contract from commit
 
 ## Build
 
-Install the native macOS bare-metal RISC-V toolchain:
+The Makefile uses `riscv64-elf-gcc` when installed and otherwise falls back to
+Homebrew LLVM + LLD:
 
 ```bash
-brew install riscv64-elf-gcc
+brew install llvm lld
 ```
 
 Build the game:
 
 ```bash
-cd my-app/game
+cd game
 make
 ```
 
@@ -34,6 +35,10 @@ Outputs are written to `build/`:
 - `game.disasm`: disassembly for review
 - `game.mcode.txt`: one 32-bit instruction word per line
 - `../coe/board/I_dino_game.coe`: installed board instruction COE
+
+`make` also runs mandatory gates: RV32I attributes, no unresolved symbols, no
+M-extension opcodes, word alignment, and a strict 1024-word instruction-ROM
+limit. Use `make toolchain-info` to see the selected compiler.
 
 ## Current MMIO Contract
 
@@ -77,3 +82,5 @@ This is a text-mode Chrome-dino style runner:
   matching data RAM COE. The current program writes all visible text with
   immediate character constants, so it only needs an instruction ROM COE.
 - Keep hardware access through `volatile` MMIO helpers.
+- The linker rejects `.rodata` and initialized `.data`, because this Harvard
+  SoC cannot read instruction-ROM constants through ordinary loads.

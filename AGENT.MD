@@ -254,6 +254,7 @@ python3 sim/run_top_board_sim.py \
   - `SW[15]=0` 显示 CPU 可写文本显存，复位后默认左上角显示 `SCPU VGA READY`。
 - `IO/MIO_BUS.v` 和 `sim/board_sim_models.v` 已把 `0xC...` 地址段排除出普通 RAM，`board/top.v` 也用 `data_ram_we` 门控 RAM 写使能，避免 MMIO 写入误伤数据 RAM。
 - `coe/board/I_vga_text_smoke.coe` 是 VGA 文本 MMIO smoke 程序，会向 cell0/cell1 写入 `OK`。
+- 当前在 `feature/dino-game-optimization` 分支优化已合入 main 的 dinosaur 游戏。第一道门禁已完成：`game/Makefile` 自动选择 GNU 或 Homebrew LLVM/LLD，使用 `-Os` 后当前游戏从 644 words 降至 501 words，并强制检查 4 KiB ROM、RV32I-only、无未解析符号、禁止 M 扩展和禁止无法由 Harvard 数据口读取的字符串/初始化数据；`game/start.S` 已补 `.bss` 清零。
 - 验证命令：
 
 ```bash

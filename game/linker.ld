@@ -1,3 +1,4 @@
+OUTPUT_ARCH(riscv)
 ENTRY(_start)
 
 MEMORY
@@ -14,28 +15,43 @@ SECTIONS
     {
         KEEP(*(.text.start))
         *(.text*)
-        *(.rodata*)
+        . = ALIGN(4);
     } > IMEM
 
-    . = ALIGN(4);
+    /* This Harvard SoC cannot read instruction ROM through lw. */
+    .rodata : ALIGN(4)
+    {
+        *(.rodata*)
+        . = ALIGN(4);
+    } > IMEM
 
     .data : ALIGN(4)
     {
         *(.sdata*)
         *(.data*)
+        . = ALIGN(4);
     } > DMEM
 
     .bss (NOLOAD) : ALIGN(4)
     {
+        __bss_start = .;
         *(.sbss*)
         *(.bss*)
         *(COMMON)
+        . = ALIGN(4);
+        __bss_end = .;
     } > DMEM
+
+    __stack_top = ORIGIN(DMEM) + LENGTH(DMEM);
+
+    ASSERT(SIZEOF(.text) <= LENGTH(IMEM), "DINO instruction ROM overflow")
+    ASSERT(SIZEOF(.rodata) == 0, "String literals/rodata require a data RAM image")
+    ASSERT(SIZEOF(.data) == 0, "Initialized data require a data RAM image")
+    ASSERT(__bss_end <= (__stack_top - 1024), "DINO leaves less than 1 KiB stack")
 
     /DISCARD/ :
     {
         *(.comment*)
-        *(.riscv.attributes*)
         *(.eh_frame*)
     }
 }

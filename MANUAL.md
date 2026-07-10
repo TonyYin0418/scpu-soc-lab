@@ -720,6 +720,23 @@ board/top.v
 
 ## 8. 从汇编生成 COE
 
+### 8.1 构建 Dinosaur 游戏
+
+游戏位于 `game/`。Makefile 优先使用 `riscv64-elf-gcc`，本机未安装时自动
+使用 Homebrew LLVM + LLD：
+
+```bash
+cd game
+make clean
+make toolchain-info
+make
+make install-coe
+```
+
+`make` 会验证 RV32I 属性、禁止 M 扩展、无未解析符号以及 1024-word ROM
+容量。`make install-coe` 更新 `coe/board/I_dino_game.coe`。当前优化基线为
+501/1024 words；Vivado 的 `ROM_D` 需要重新选择更新后的 COE 后重新生成 IP。
+
 老师提供的工具位于 `asm2coe/`，需要 RISC-V GNU 工具链。Linux/WSL 中执行：
 
 ```bash
