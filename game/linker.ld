@@ -14,6 +14,10 @@ SECTIONS
     .text : ALIGN(4)
     {
         KEEP(*(.text.start))
+        *(.text.pretrap*)
+        ASSERT(. <= 0x340, "pre-trap code overlaps timer vector")
+        . = 0x340;
+        KEEP(*(.text.trap))
         *(.text*)
         . = ALIGN(4);
     } > IMEM

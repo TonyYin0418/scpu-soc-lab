@@ -58,10 +58,23 @@ module top(
     wire        mem_w;
     wire        CPU_MIO;
 
-    // 计数器通道 0 按原理图连接到 INT；老师 SCPU 当前可直接使用该接口。
+    // 计数器通道 0 保留老师原接口；游戏定时器复位后默认关闭，软件向
+    // 0xFFFF_FE00 写 bit0=1 后产生稳定的 25 Hz 单周期中断脉冲。
     wire counter0_OUT;
     wire counter1_OUT;
     wire counter2_OUT;
+    wire game_tick_irq;
+    wire game_timer_we = mem_w && (addr_bus == 32'hffff_fe00);
+    reg  legacy_timer_armed;
+    wire cpu_timer_irq = game_tick_irq | (legacy_timer_armed & counter0_OUT);
+
+    game_timer U_GAME_TIMER(
+        .clk(Clk_CPU),
+        .rst(rst),
+        .enable_we(game_timer_we),
+        .enable_data(Cpu_data2bus[0]),
+        .tick_irq(game_tick_irq)
+    );
 
     ROM_D U2_ROMD(
         .a(PC[11:2]),
@@ -80,7 +93,7 @@ module top(
         .Data_out(Cpu_data2bus),
         .dm_ctrl(dm_ctrl),
         .CPU_MIO(CPU_MIO),
-        .INT(counter0_OUT)
+        .INT(cpu_timer_irq)
     );
 
     // MIO_BUS 将 CPU 地址空间划分为数据 RAM、GPIO 和计数器外设。
@@ -177,6 +190,15 @@ module top(
     // GPIO 和计数器外设。
     wire [1:0]  counter_set;
     wire [13:0] GPIOf0;
+
+    // Counter_x 上电从 0 下溢后 counter0_OUT 会保持为 1；只有软件真正
+    // 写过通道 0 后才允许它进入 CPU，避免未配置计数器制造中断风暴。
+    always @(posedge Clk_IO or posedge rst) begin
+        if (rst)
+            legacy_timer_armed <= 1'b0;
+        else if (counter_we && (counter_set == 2'b00))
+            legacy_timer_armed <= 1'b1;
+    end
 
     SPIO U7_SPIO(
         .clk(Clk_IO),

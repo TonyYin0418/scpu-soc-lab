@@ -49,6 +49,8 @@ limit. Use `make toolchain-info` to see the selected compiler.
 #define MMIO_LED     0xF0000000u
 #define MMIO_PS2_KEY 0xD0000000u
 #define MMIO_PS2_LOG 0xD0000004u
+#define MMIO_GAME_TIMER 0xFFFFFE00u
+#define MMIO_INTMASK 0xFFFFFF00u
 ```
 
 VGA is 80x60 text mode:
@@ -82,8 +84,11 @@ The dinosaur, crouch pose, cactus, and bird use custom 8x8 pixel-art tiles in
 The game has READY, RUNNING, PAUSED, and GAME OVER states. Crouching clears a
 low bird but deliberately does not clear a cactus.
 
-The current polling build continues sampling PS/2 while waiting for the next
-frame, so break/extended sequences are not hidden by a long blocking delay.
+The main loop continuously polls PS/2, so break/extended sequences are not
+hidden by a long blocking delay. A disabled-by-default hardware timer is
+enabled through `MMIO_GAME_TIMER` and generates the 25 Hz frame interrupt. The
+handler at the CPU's fixed `0x340` vector preserves all integer registers and
+only publishes a pending tick; physics and rendering remain in the main loop.
 Moving objects erase only their previous occupied cells instead of clearing a
 five-row screen band every frame.
 

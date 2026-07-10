@@ -735,10 +735,17 @@ make install-coe
 
 `make` 会验证 RV32I 属性、禁止 M 扩展、无未解析符号以及 1024-word ROM
 容量。`make install-coe` 更新 `coe/board/I_dino_game.coe`。当前完整玩法版本为
-832/1024 words：包含自定义恐龙/仙人掌/飞鸟像素字模、站立与下蹲碰撞盒、
+869/1024 words：包含自定义恐龙/仙人掌/飞鸟像素字模、站立与下蹲碰撞盒、
 READY/RUNNING/PAUSED/GAME OVER 状态和局部重绘。操作键为 Space/W/↑ 跳跃、
 S/↓ 下蹲、P 暂停、R/Enter 回到 READY；空中按住下蹲会加速落地。
 Vivado 的 `ROM_D` 需要重新选择更新后的 COE 后重新生成 IP。
+
+帧节拍不再由 C 忙等延时决定。`IO/game_timer.v` 复位后默认关闭，游戏向
+`0xFFFFFE00` 写 1 后，在 50 MHz CPU 时钟下产生 25 Hz 单周期 IRQ；软件再向
+`0xFFFFFF00` 写 `0x40` 打开 CPU 定时中断。固定向量 `0x340` 的汇编 ISR 保存/
+恢复全部整数寄存器，只累加 `frame_ticks`，物理、键盘和 VGA 写入仍在主循环。
+旧 `Counter_x` 只有在软件实际配置通道 0 后才允许接入 CPU，避免其上电下溢
+形成持续高电平中断。
 
 对应的本地门禁为：
 
@@ -750,6 +757,11 @@ iverilog -g2012 -Wall -s vga_text_renderer_tb -o build/vga_text_renderer_tb \
 vvp -n build/vga_text_renderer_tb
 python3 sim/run_top_board_sim.py --imem game/build/game.coe \
   --max-cycles 300000 --check-dino-ready
+iverilog -g2012 -Wall -s game_timer_tb -o build/game_timer_tb \
+  sim/game_timer_tb.v IO/game_timer.v
+vvp -n build/game_timer_tb
+python3 sim/run_top_board_sim.py --imem game/build/game.coe \
+  --max-cycles 4300000 --send-ps2-key 29 --check-dino-tick
 ```
 
 老师提供的工具位于 `asm2coe/`，需要 RISC-V GNU 工具链。Linux/WSL 中执行：

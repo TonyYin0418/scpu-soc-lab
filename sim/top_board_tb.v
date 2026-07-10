@@ -38,6 +38,7 @@ module top_board_tb;
     integer check_vga;
     integer check_vga_text;
     integer check_dino_ready;
+    integer check_dino_tick;
     integer vga_green_samples;
     integer vga_hs_edges;
     integer vga_vs_edges;
@@ -45,6 +46,9 @@ module top_board_tb;
     integer saw_vga_k;
     reg [5:0] dino_tiles;
     reg [4:0] ready_letters;
+    integer saw_game_timer_enable;
+    integer saw_timer_vector;
+    integer saw_first_score;
     integer saw_1111;
     integer saw_2222;
     integer saw_3333;
@@ -96,6 +100,7 @@ module top_board_tb;
         check_vga = 0;
         check_vga_text = 0;
         check_dino_ready = 0;
+        check_dino_tick = 0;
         vga_green_samples = 0;
         vga_hs_edges = 0;
         vga_vs_edges = 0;
@@ -103,6 +108,9 @@ module top_board_tb;
         saw_vga_k = 0;
         dino_tiles = 6'b0;
         ready_letters = 5'b0;
+        saw_game_timer_enable = 0;
+        saw_timer_vector = 0;
+        saw_first_score = 0;
         saw_1111 = 0;
         saw_2222 = 0;
         saw_3333 = 0;
@@ -126,6 +134,7 @@ module top_board_tb;
         check_vga = $test$plusargs("CHECK_VGA_GREEN");
         check_vga_text = $test$plusargs("CHECK_VGA_TEXT");
         check_dino_ready = $test$plusargs("CHECK_DINO_READY");
+        check_dino_tick = $test$plusargs("CHECK_DINO_TICK");
         void'($value$plusargs("SW=%h", sw_value));
         void'($value$plusargs("IMEM=%s", imem_file));
         void'($value$plusargs("DMEM=%s", dmem_file));
@@ -159,8 +168,10 @@ module top_board_tb;
             $display("[TOP_SIM] CHECK_VGA_TEXT enabled: expect writes cell0=ff4f, cell1=ff4b");
         if (check_dino_ready)
             $display("[TOP_SIM] CHECK_DINO_READY enabled: expect custom dino tiles and READY state");
+        if (check_dino_tick)
+            $display("[TOP_SIM] CHECK_DINO_TICK enabled: expect timer enable, vector 0x340 and score tick");
         if (force_int_start >= 0) begin
-            force U_TOP.counter0_OUT = 1'b0;
+            force U_TOP.cpu_timer_irq = 1'b0;
             $display("[TOP_SIM] timer INT held low until cycle %0d", force_int_start);
         end
         #100 rstn = 1'b1;
@@ -238,12 +249,24 @@ module top_board_tb;
         if (rstn) begin
             cycle = cycle + 1;
 
+            if (U_TOP.mem_w && (U_TOP.addr_bus == 32'hffff_fe00) && U_TOP.Cpu_data2bus[0])
+                saw_game_timer_enable = 1;
+            if (U_TOP.PC == 32'h0000_0340)
+                saw_timer_vector = 1;
+            if (U_TOP.mem_w && (U_TOP.addr_bus == 32'he000_0000) &&
+                (U_TOP.Cpu_data2bus == 32'h0000_0001))
+                saw_first_score = 1;
+            if (check_dino_tick && saw_game_timer_enable && saw_timer_vector && saw_first_score) begin
+                $display("[TOP_SIM][PASS] dino timer interrupt advanced first frame and score");
+                $finish;
+            end
+
             if ((force_int_start >= 0) && (cycle == force_int_start)) begin
-                force U_TOP.counter0_OUT = 1'b1;
+                force U_TOP.cpu_timer_irq = 1'b1;
                 $display("[TOP_SIM] cycle=%0d force timer INT high", cycle);
             end
             if ((force_int_end >= 0) && (cycle == force_int_end)) begin
-                force U_TOP.counter0_OUT = 1'b0;
+                force U_TOP.cpu_timer_irq = 1'b0;
                 $display("[TOP_SIM] cycle=%0d force timer INT low", cycle);
             end
 

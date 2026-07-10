@@ -7,6 +7,8 @@
 #define MMIO_LED      0xF0000000u
 #define MMIO_PS2_KEY  0xD0000000u
 #define MMIO_PS2_LOG  0xD0000004u
+#define MMIO_GAME_TIMER 0xfffffe00u
+#define MMIO_INTMASK  0xffffff00u
 
 #define VGA_COLS      80u
 #define VGA_ROWS      60u
@@ -59,6 +61,8 @@
 #define STATE_PAUSED    2u
 #define STATE_GAME_OVER 3u
 
+#define PRETRAP __attribute__((section(".text.pretrap")))
+
 typedef struct {
     uint32_t scan_log;
     unsigned int break_pending;
@@ -70,6 +74,7 @@ typedef struct {
 } InputState;
 
 static InputState input;
+volatile uint32_t frame_ticks;
 
 static inline void mmio_write(uint32_t addr, uint32_t value)
 {
@@ -197,7 +202,7 @@ static void clear_screen(void)
     }
 }
 
-static void draw_static_scene(void)
+PRETRAP static void draw_static_scene(void)
 {
     unsigned int col;
 
@@ -246,7 +251,7 @@ static void score_tick(unsigned int *d3, unsigned int *d2, unsigned int *d1, uns
     }
 }
 
-static void draw_dino(int y, unsigned int crouching, unsigned char attr)
+PRETRAP static void draw_dino(int y, unsigned int crouching, unsigned char attr)
 {
     int foot = GROUND_ROW - y;
 
@@ -282,7 +287,7 @@ static void erase_dino(int y, unsigned int crouching)
     }
 }
 
-static void draw_obstacle(int x, int h, unsigned int type, unsigned char attr)
+PRETRAP static void draw_obstacle(int x, int h, unsigned int type, unsigned char attr)
 {
     int i;
 
@@ -399,14 +404,6 @@ static unsigned int take_actions(InputState *input)
     return actions;
 }
 
-static void wait_for_frame(InputState *input, unsigned int polls)
-{
-    while (polls != 0u) {
-        poll_input(input);
-        polls--;
-    }
-}
-
 int main(void)
 {
     int dino_y = 0;
@@ -436,6 +433,8 @@ int main(void)
     draw_dino(dino_y, crouching, ATTR_WHITE);
     draw_obstacle(obstacle_x, obstacle_h, obstacle_type, ATTR_GREEN);
     draw_ready();
+    mmio_write(MMIO_INTMASK, 0x40u);
+    mmio_write(MMIO_GAME_TIMER, 1u);
 
     for (;;) {
         unsigned int action;
@@ -467,13 +466,11 @@ int main(void)
             draw_obstacle(obstacle_x, obstacle_h, obstacle_type, ATTR_GREEN);
             draw_ready();
             mmio_write(MMIO_LED, 0u);
-            wait_for_frame(&input, 10000u);
             continue;
         }
 
         if (state == STATE_READY) {
             if ((action & ACTION_JUMP) == 0u) {
-                wait_for_frame(&input, 10000u);
                 continue;
             }
             state = STATE_RUNNING;
@@ -489,7 +486,6 @@ int main(void)
         }
 
         if (state == STATE_PAUSED || state == STATE_GAME_OVER) {
-            wait_for_frame(&input, 10000u);
             continue;
         }
 
@@ -497,6 +493,13 @@ int main(void)
             jumping = 1;
             dino_v = 5;
         }
+
+        // Keyboard polling remains continuous, while physics/rendering execute
+        // exactly once for each timer interrupt. Multiple delayed ticks coalesce.
+        if (frame_ticks == 0u) {
+            continue;
+        }
+        frame_ticks = 0u;
 
         prev_dino_y = dino_y;
         prev_crouching = crouching;
@@ -518,7 +521,7 @@ int main(void)
         prev_obstacle_x = obstacle_x;
         prev_obstacle_h = obstacle_h;
         prev_obstacle_type = obstacle_type;
-        obstacle_x = obstacle_x - 1;
+        obstacle_x = obstacle_x - ((speed_step < 4u) ? 1 : 2);
         if (obstacle_x < -1) {
             rnd = lfsr_next(rnd);
             obstacle_x = 79 + (int)(rnd & 15u);
@@ -548,14 +551,6 @@ int main(void)
 
         if (score0 == 0u && score1 == 0u) {
             speed_step++;
-        }
-
-        if (speed_step < 4u) {
-            wait_for_frame(&input, 120000u);
-        } else if (speed_step < 8u) {
-            wait_for_frame(&input, 90000u);
-        } else {
-            wait_for_frame(&input, 65000u);
         }
     }
 }
