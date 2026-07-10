@@ -1,7 +1,8 @@
 `timescale 1ns / 1ps
 
 // Nexys A7 板级顶层。
-// 本阶段使用老师提供的 SCPU.edf 和外围 EDF，按 schematic.pdf 连接。
+// Dinosaur 中断版必须绑定 rtl/SCPU.v；老师 SCPU.edf 的中断向量和返回
+// 语义不属于当前软件契约，不能与 rtl/SCPU.v 同时加入 Vivado 工程。
 module top(
     input             clk,
     input             rstn,

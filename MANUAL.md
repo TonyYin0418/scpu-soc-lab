@@ -747,7 +747,27 @@ Vivado 的 `ROM_D` 需要重新选择更新后的 COE 后重新生成 IP。
 旧 `Counter_x` 只有在软件实际配置通道 0 后才允许接入 CPU，避免其上电下溢
 形成持续高电平中断。
 
-已有 Vivado 工程升级到这个游戏版本时，Design Sources 只需替换以下现有文件：
+已有 Vivado 工程升级到这个游戏版本时，必须先确认 CPU。中断版不能继续使用
+`edf/SCPU.edf`：它与当前软件没有共同验证过 `0x340` 定时向量、课程 ERET 编码
+和 `0xFFFFFF00` 中断掩码。应禁用或移除 `edf/SCPU.edf`，并加入：
+
+```text
+rtl/SCPU.v
+rtl/ctrl.v
+rtl/alu.v
+rtl/EXT.v
+rtl/NPC.v
+rtl/PC.v
+rtl/RF.v
+rtl/forward_unit.v
+rtl/hazard_unit.v
+rtl/exception_unit.v
+rtl/dm_controller.v
+```
+
+`rtl/ctrl_encode_def.v` 是这些 RTL 的 include 文件，需保证 `rtl/` 位于 include
+搜索路径。不得让 `edf/SCPU.edf` 与 `rtl/SCPU.v` 同时存在，否则会发生同名模块
+冲突或错误绑定。然后替换以下现有文件：
 
 ```text
 board/top.v
@@ -769,8 +789,9 @@ coe/board/I_dino_game.coe
 
 `game/*.c`、`game/*.S`、`game/linker.ld`、`sim/*` 和仓库根目录的 `*.f` 是构建/
 仿真输入，不加入 Vivado Design Sources。`IO/VGA/vga_text_ram.v` 本轮只有注释
-更新，已有工程无需因此替换；`IO/MIO_BUS.v`、PS/2 RTL 和 CPU RTL 本轮也没有
-功能改动。更新 COE 后应在 `ROM_D` 的 IP 配置中重新选择该文件并重新生成
+更新，已有工程无需因此替换；`IO/MIO_BUS.v` 和 PS/2 RTL 本轮没有功能改动。
+CPU RTL 即使仓库内容没有新改动，也必须按上面的列表替换老师 EDF，这是中断版
+的运行前提。更新 COE 后应在 `ROM_D` 的 IP 配置中重新选择该文件并重新生成
 Output Products，再重新综合、实现和生成 bitstream。
 
 对应的本地门禁为：
