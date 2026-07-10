@@ -14,7 +14,7 @@
 
 当前 `feature/ps2-keyboard` 分支在已提交的单级中断/异常版本基础上接入 PS/2 键盘。老师提供的 PS2 文件已整理到 `IO/PS2/`；板级系统改用自写 `IO/MIO_BUS.v`，新增 `0xD0000000`/`0xD0000004` 键盘 MMIO 地址，同时保留原 RAM、数码管和 LED 地址行为。
 
-当前 `feature/dino-game-app` 分支开始准备复杂应用：计划实现类似 Chrome Dinosaur 的 VGA + 键盘小游戏。用户本机暂不要求安装 RISC-V 交叉编译环境；协作者可在 `app/dino/` 使用 Makefile 生成后续游戏 COE。
+当前 `feature/dino-game-app` 分支开始准备复杂应用：计划实现类似 Chrome Dinosaur 的 VGA + 键盘小游戏。本机已配置 Homebrew LLVM + LLD 交叉编译环境；`app/dino/Makefile` 固定生成 RV32I/ILP32 裸机程序，也兼容 `riscv64-unknown-elf-gcc`。
 
 所有命令默认在项目根目录 `SCPU_SOC` 中执行。
 
@@ -32,7 +32,7 @@ docs/dino_game_plan.md
 app/dino/
 ```
 
-协作者如果已配置 RISC-V 工具链，可从当前分支再切功能分支：
+从当前分支继续开发：
 
 ```bash
 git checkout feature/dino-game-app
@@ -40,7 +40,14 @@ git pull
 git checkout -b feature/dino-game-core
 ```
 
-后续在 `app/dino/` 中构建：
+先验证交叉编译环境：
+
+```bash
+cd app/dino
+make toolchain-check
+```
+
+加入 `src/crt0.S` 和应用源文件后构建：
 
 ```bash
 cd app/dino

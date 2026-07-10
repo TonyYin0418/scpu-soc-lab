@@ -15,7 +15,7 @@
 - 美术资源；
 - 声音；
 - 高级异常/中断联动；
-- 本机 RISC-V 工具链安装。
+- 完整游戏程序编译与运行（交叉编译环境已经单独配置并验证）。
 
 ### 最终演示目标
 
@@ -91,7 +91,7 @@ app/dino/
 ├── tests/
 │   └── README.md       # 软件级和板级测试记录
 ├── linker.ld           # ROM 从 0x0 开始的裸机链接脚本
-├── Makefile            # 可选：给已装工具链的人生成 COE
+├── Makefile            # GNU/LLVM 自动选择并生成 COE
 └── README.md           # 协作入口
 ```
 
@@ -154,7 +154,14 @@ PS/2 扫描码先只处理最小集合：
 
 ## 7. 编译与 COE 生成约定
 
-协作者如果已经配置好 RISC-V 工具链，可在：
+本机使用 Homebrew LLVM + LLD；Makefile 也兼容 GNU RISC-V 工具链。先运行：
+
+```bash
+cd app/dino
+make toolchain-check
+```
+
+加入应用源文件后运行：
 
 ```bash
 cd app/dino
@@ -170,14 +177,15 @@ build/dino.asm
 ../../coe/app/dino/I_dino_game.coe
 ```
 
-当前仓库还没有放入 `crt0.S` / `main.c`，因此 Makefile 是协作约定，不是已经可运行的游戏构建。第一个实现 PR 应先加入最小启动程序，并证明能生成 COE。
+当前仓库还没有放入 `crt0.S` / `main.c`，所以完整游戏尚不能生成；交叉编译、链接、objcopy 和反汇编链路已经由 `tests/toolchain_smoke.S` 验证。下一步应加入最小启动程序并生成第一个 COE。
 
-工具链建议：
+支持的工具链：
 
 ```text
 riscv64-unknown-elf-gcc
 riscv64-unknown-elf-objcopy
 riscv64-unknown-elf-objdump
+Homebrew llvm + lld
 ```
 
 编译选项必须满足：
@@ -251,5 +259,4 @@ PR 应尽量按小块提交：
 2. 最终演示主要用哪些按键？Space 是否方便接 PS/2 键盘测试？
 3. 是否要求使用 timer interrupt 驱动游戏 tick，还是轮询 + 软件延时即可？
 4. 是否要求游戏程序本身覆盖 37 条指令，还是可以用已有 `testac` 作为 CPU 指令验收，游戏只做应用演示？
-5. 协作者使用的是 GCC 还是只写汇编？如果用 C，需要确认他本地工具链命令名是否是 `riscv64-unknown-elf-gcc`。
-6. VGA 字库当前上板只看到光标横杠，后续是否要先修字库初始化，再写游戏？文本游戏依赖字库，这个必须在正式演示前解决。
+5. VGA 字库当前上板只看到光标横杠，后续是否要先修字库初始化，再写游戏？文本游戏依赖字库，这个必须在正式演示前解决。

@@ -17,9 +17,38 @@ tests/     软件/仿真/上板测试记录
 docs/dino_game_plan.md
 ```
 
+## 交叉编译环境
+
+构建脚本支持两套 RV32I 裸机工具链，并会自动选择：
+
+1. `riscv64-unknown-elf-gcc`；
+2. Homebrew `llvm` + `lld`。
+
+macOS 首次配置：
+
+```bash
+brew install llvm lld
+cd app/dino
+make toolchain-check
+```
+
+当前工程固定使用 `rv32i/ilp32`，不会生成 CPU 尚未实现的 M/C 扩展指令。
+查看实际选择的编译器路径：
+
+```bash
+make toolchain-info
+```
+
+也可显式指定工具链：
+
+```bash
+make TOOLCHAIN=llvm toolchain-check
+make TOOLCHAIN=gnu toolchain-check
+```
+
 ## 构建约定
 
-协作者本地若已安装 RISC-V 工具链，可在本目录运行：
+加入 `src/crt0.S` 和游戏源文件后，在本目录运行：
 
 ```bash
 make
@@ -31,9 +60,7 @@ make
 ../../coe/app/dino/I_dino_game.coe
 ```
 
-注意：当前还没有 `src/crt0.S` / `src/main.c`，所以 Makefile 是构建约定草案。等第一个实现 PR 加入源文件后再运行 `make`。
-
-当前用户本机暂不要求配置工具链。
+当前还没有 `src/crt0.S` / `src/main.c`，因此完整的 `make` 会明确提示缺少应用源文件；交叉编译环境可先用 `make toolchain-check` 独立验证。
 
 ## MMIO 快速参考
 

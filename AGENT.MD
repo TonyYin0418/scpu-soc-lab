@@ -267,13 +267,14 @@ python3 sim/run_top_board_sim.py --imem coe/board/I_vga_text_smoke.coe --sw 0000
 
 - 当前工作分支为 `feature/dino-game-app`，从已合并 VGA 显示里程碑的 `main` 切出。
 - 目标是实现一个类似 Chrome Dinosaur 的横向跑酷小游戏，但不要求像素级复刻。
-- 本阶段先建立协作骨架，不在用户本机强制配置 RISC-V 交叉编译环境。
+- 本机已安装 Homebrew LLVM 22.1.8 与 LLD 22.1.8，`make toolchain-check` 已验证 ELF32 little-endian RISC-V、入口 `0x0` 和 `rv32i2p1` 架构属性。
 - 应用目录为 `app/dino/`：
   - `src/`：后续放裸机启动、主循环、游戏逻辑；
   - `include/`：后续放 MMIO、VGA、键盘和游戏接口；
   - `assets/`：字符画/资源说明；
   - `tests/`：仿真和上板测试记录；
-  - `Makefile` / `linker.ld`：给已安装工具链的协作者生成 `coe/app/dino/I_dino_game.coe`。
+  - `Makefile` / `linker.ld`：自动选择 GNU 交叉 GCC 或 Homebrew LLVM + LLD，后续生成 `coe/app/dino/I_dino_game.coe`；
+  - `tests/toolchain_smoke.S`：只含 RV32I 基础指令的交叉编译环境自检。
 - 设计计划在 `docs/dino_game_plan.md`，包含游戏循环、VGA 文本模式方案、PS/2 按键方案、PR 协作规则和待确认问题。
 - 当前建议先做 80x60 ASCII 文本风格游戏，使用 `0xC0000000` VGA 文本显存和 `0xD0000000` PS/2 键盘 MMIO；后续若时间充足再扩展为图形 framebuffer。
 - `ROM_D` 使用 Distributed Memory Generator，`RAM_B` 使用 Block Memory Generator；两者必须在 Vivado 中生成，仓库当前只有连接接口，没有伪造可综合实现。
