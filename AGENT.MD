@@ -231,24 +231,25 @@ python3 sim/run_top_board_sim.py \
 - `coe/board/I_exception_board_smoke.coe` 是上板用 exception 主路径 smoke 程序；只测 ECALL/SYSCALL、非法指令和 ERETN，不依赖 timer interrupt。预期显示 `11110000 -> e0000002 -> 22220000 -> e0000001 -> 33330000`，最终停在 `33330000`。
 - VS Code Verilog 跳转当前使用 mshr-h Verilog-HDL 插件 + native `slang-server 0.2.7`。`.slang/server.json` 使用 `flags: -f board_own_files.f` 和精确 `indexGlobs`，已验证 `board/top.v` 中 `Enter`、`clk_div`、`ROM_D`、`SCPU`、`MIO_BUS`、`PS2IO`、`dm_controller`、`RAM_B`、`SPIO`、`Counter_x`、`Multi_8CH32`、`SSeg7` 均应可 Go to Definition。不要退回旧的 `board_own_deps.f + index.dirs` 方案；该方案曾出现重启 VS Code 后 No Definitions。
 
-## 当前阶段：VGA 显示与软件输出准备分支
+## 当前阶段：VGA 显示重新实现分支
 
-- 当前工作分支为 `feature/vga-display`，从已合并 PS/2 和 exception smoke 的 `main` 切出。
-- 本阶段目标已经从“固定图案验线”推进到“后续写软件前可用”：VGA 使用老师提供的 `VGAIO/VGA_Scan` 显示路径，同时接入 CPU 可写文本显存 MMIO。
+- 当前工作分支为 `feature/vga-redesign`，从已合并 PS/2、exception smoke 和上一版 VGA 里程碑的 `main` 切出。
+- 本阶段按课程直观接口重新实现 VGA：先保证 640x480 同步/RGB 稳定，再提供 CPU 可写 80x60 ASCII 文本显存，作为 dinosaur 游戏的软件显示 API。不继续使用上一版 `VGAIO/VGA_Scan` 作为 active 编译路径。
 - 用户提供的 `VGA接口/` 已整理：
   - 原 `VGAIO.v`、`VGA_Scan.v` 保存到 `docs/reference/vga/`，作为老师原始版本参考；
   - 字库 COE `font_ascii_8_8.coe`、`Hzk16.coe` 保存到 `coe/vga/`；
   - `docs/reference/xdc/Nexys-A7-100T-Master.xdc` 保存用户提供的官方约束参考。
 - 当前实际编译使用：
-  - `IO/VGA/VGA_Scan.v`：老师 640x480@60Hz 扫描时序，整理为 UTF-8 注释版本；
-  - `IO/VGA/VGAIO.v`：老师 VGAIO 显示模块，保留 Test、Pixel、文本 VRAM、字库和光标接口；
-  - `IO/VGA/vga_font_roms.v`：8x8 ASCII 字库 ROM，读取 `coe/vga/font_ascii_8_8.mem`；Vivado 工程需要能找到该 `.mem` 文件；16x16 中文字库接口暂保留为空；
+  - `IO/VGA/vga_timing.v`：100 MHz 主时钟下用 4 分频 clock-enable 产生 25 MHz 等效像素节拍，生成标准 640x480@60Hz 计数、active、低有效 HS/VS；
+  - `IO/VGA/vga_font_rom.v`：8x8 ASCII 字库 ROM，读取 `coe/vga/font_ascii_8_8.mem`；
   - `IO/VGA/vga_text_ram.v`：CPU 可写 80x60 文本显存。
+  - `IO/VGA/vga_text_renderer.v`：把扫描坐标映射到文本单元和字库像素，输出 RGB；
+  - `IO/VGA/vga_top.v`：组合 timing、text RAM、font renderer，并提供 `SW[15]` 绿屏测试模式。
 - `board/top.v` 已新增 VGA 顶层端口：`VGA_R[3:0]`、`VGA_G[3:0]`、`VGA_B[3:0]`、`VGA_HS`、`VGA_VS`。
 - `constraints/icf.xdc` 已按 `Nexys-A7-100T-Master.xdc` 增加 VGA 管脚约束。
 - VGA 软件地址约定：
   - `0xC0000000 + (row * 80 + col) * 4` 写一个 16 位文本单元；
-  - 文本单元格式为 `{颜色属性[15:8], ASCII[7:0]}`，例如 `16'hff41` 显示白色 `A`；
+  - 文本单元格式为 `{颜色属性[15:8], ASCII[7:0]}`，当前 renderer 取属性高 4 位作为 RGB 灰度强度，例如 `16'hff41` 显示白色 `A`；
   - `SW[15]=1` 强制绿色全屏 Test 通道，用于排查线缆、管脚和同步；
   - `SW[15]=0` 显示 CPU 可写文本显存，复位后默认左上角显示 `SCPU VGA READY`。
 - `IO/MIO_BUS.v` 和 `sim/board_sim_models.v` 已把 `0xC...` 地址段排除出普通 RAM，`board/top.v` 也用 `data_ram_we` 门控 RAM 写使能，避免 MMIO 写入误伤数据 RAM。
