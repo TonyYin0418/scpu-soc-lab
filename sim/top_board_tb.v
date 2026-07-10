@@ -6,7 +6,9 @@
 // 1. CPU 写 0xE0000000 显示 MMIO 时，打印 display_write；
 // 2. Multi_8CH32 当前输出变化时，打印 sevenseg_hex；
 // 3. dump build/top_board_tb.vcd，可在 GTKWave 中查看 disp_an_o/disp_seg_o。
-module top_board_tb;
+module top_board_tb #(
+    parameter integer GAME_TIMER_PERIOD = 2_000_000
+);
 
     reg         clk;
     reg         rstn;
@@ -40,6 +42,7 @@ module top_board_tb;
     integer check_dino_ready;
     integer check_dino_tick;
     integer check_ps2_smoke;
+    integer check_dino_frames;
     integer vga_green_samples;
     integer vga_hs_edges;
     integer vga_vs_edges;
@@ -50,6 +53,7 @@ module top_board_tb;
     integer saw_game_timer_enable;
     integer saw_timer_vector;
     integer saw_first_score;
+    integer saw_score_five;
     integer saw_1111;
     integer saw_2222;
     integer saw_3333;
@@ -66,7 +70,7 @@ module top_board_tb;
     assign ps2_clk  = ps2_clk_drive_low  ? 1'b0 : 1'bz;
     assign ps2_data = ps2_data_drive_low ? 1'b0 : 1'bz;
 
-    top U_TOP(
+    top #(.GAME_TIMER_PERIOD(GAME_TIMER_PERIOD)) U_TOP(
         .clk(clk),
         .rstn(rstn),
         .sw_i(sw_i),
@@ -103,6 +107,7 @@ module top_board_tb;
         check_dino_ready = 0;
         check_dino_tick = 0;
         check_ps2_smoke = 0;
+        check_dino_frames = 0;
         vga_green_samples = 0;
         vga_hs_edges = 0;
         vga_vs_edges = 0;
@@ -113,6 +118,7 @@ module top_board_tb;
         saw_game_timer_enable = 0;
         saw_timer_vector = 0;
         saw_first_score = 0;
+        saw_score_five = 0;
         saw_1111 = 0;
         saw_2222 = 0;
         saw_3333 = 0;
@@ -138,6 +144,7 @@ module top_board_tb;
         check_dino_ready = $test$plusargs("CHECK_DINO_READY");
         check_dino_tick = $test$plusargs("CHECK_DINO_TICK");
         check_ps2_smoke = $test$plusargs("CHECK_PS2_SMOKE");
+        check_dino_frames = $test$plusargs("CHECK_DINO_FRAMES");
         void'($value$plusargs("SW=%h", sw_value));
         void'($value$plusargs("IMEM=%s", imem_file));
         void'($value$plusargs("DMEM=%s", dmem_file));
@@ -175,6 +182,8 @@ module top_board_tb;
             $display("[TOP_SIM] CHECK_DINO_TICK enabled: expect timer enable, vector 0x340 and score tick");
         if (check_ps2_smoke)
             $display("[TOP_SIM] CHECK_PS2_SMOKE enabled: expect ready bit plus sent scan code");
+        if (check_dino_frames)
+            $display("[TOP_SIM] CHECK_DINO_FRAMES enabled: expect five interrupt-driven frames without framebuffer loss");
         if (force_int_start >= 0) begin
             force U_TOP.cpu_timer_irq = 1'b0;
             $display("[TOP_SIM] timer INT held low until cycle %0d", force_int_start);
@@ -261,6 +270,9 @@ module top_board_tb;
             if (U_TOP.mem_w && (U_TOP.addr_bus == 32'he000_0000) &&
                 (U_TOP.Cpu_data2bus == 32'h0000_0001))
                 saw_first_score = 1;
+            if (U_TOP.mem_w && (U_TOP.addr_bus == 32'he000_0000) &&
+                (U_TOP.Cpu_data2bus == 32'h0000_0005))
+                saw_score_five = 1;
             if (check_dino_tick && saw_game_timer_enable && saw_timer_vector && saw_first_score) begin
                 $display("[TOP_SIM][PASS] dino timer interrupt advanced first frame and score");
                 $finish;
@@ -329,6 +341,18 @@ module top_board_tb;
                 (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[2000] == 16'h0020) &&
                 (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[4500] == 16'h0020)) begin
                 $display("[TOP_SIM][PASS] dino READY framebuffer is stable and uncorrupted");
+                $finish;
+            end
+
+            if (check_dino_frames && saw_score_five &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[191]  == 16'hbb44) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[201]  == 16'hbb52) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[4000] == 16'haa2d) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[9]    == 16'hee30) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[12]   == 16'hee35) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[100]  == 16'h0020) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[2000] == 16'h0020)) begin
+                $display("[TOP_SIM][PASS] five timer frames kept static and background cells intact");
                 $finish;
             end
 

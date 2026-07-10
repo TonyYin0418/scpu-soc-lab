@@ -3,7 +3,9 @@
 // Nexys A7 板级顶层。
 // Dinosaur 中断版必须绑定 rtl/SCPU.v；老师 SCPU.edf 的中断向量和返回
 // 语义不属于当前软件契约，不能与 rtl/SCPU.v 同时加入 Vivado 工程。
-module top(
+module top #(
+    parameter integer GAME_TIMER_PERIOD = 2_000_000
+)(
     input             clk,
     input             rstn,
     input      [15:0] sw_i,
@@ -69,7 +71,7 @@ module top(
     reg  legacy_timer_armed;
     wire cpu_timer_irq = game_tick_irq | (legacy_timer_armed & counter0_OUT);
 
-    game_timer U_GAME_TIMER(
+    game_timer #(.PERIOD_CYCLES(GAME_TIMER_PERIOD)) U_GAME_TIMER(
         .clk(Clk_CPU),
         .rst(rst),
         .enable_we(game_timer_we),
