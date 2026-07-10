@@ -47,7 +47,7 @@ cd app/dino
 make toolchain-check
 ```
 
-加入 `src/crt0.S` 和应用源文件后构建：
+构建当前 DINO 应用：
 
 ```bash
 cd app/dino
@@ -60,7 +60,10 @@ make
 coe/app/dino/I_dino_game.coe
 ```
 
-当前该目录只是骨架和计划，尚未实现完整游戏程序。
+当前目录已经具备可构建的启动代码和基础驱动，完整游戏逻辑仍在开发。
+
+当前启动与基础驱动 smoke 已完成：`make` 生成的程序为 RV32I ELF，顶层仿真
+会在 VGA 清屏后向数码管 MMIO 写入 `D1000000`。完整游戏状态机在下一里程碑加入。
 
 ## 2. 环境检查
 

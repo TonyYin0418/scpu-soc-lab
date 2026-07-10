@@ -24,4 +24,19 @@ Vivado bitstream：
 问题：
 ```
 
-当前还没有完整游戏程序。
+## 启动与基础驱动 smoke
+
+```bash
+cd app/dino
+make clean
+make
+cd ../..
+python3 sim/run_top_board_sim.py \
+  --imem coe/app/dino/I_dino_game.coe \
+  --sw 0000 \
+  --max-cycles 100000
+```
+
+当前结果：ELF/COE 构建通过，程序大小 756 字节；顶层仿真在第 49177
+周期写数码管调试值 `D1000000`，说明复位入口、栈、C 函数调用和 VGA 清屏
+路径均已开始正常执行。

@@ -24,6 +24,7 @@ OBJCOPY := $(CROSS)objcopy
 OBJDUMP := $(CROSS)objdump
 READELF := $(CROSS)readelf
 SIZE    := $(CROSS)size
+NM      := $(CROSS)nm
 TARGET_FLAGS :=
 LINKER_FLAGS :=
 else ifeq ($(TOOLCHAIN),llvm)
@@ -32,6 +33,7 @@ OBJCOPY := $(LLVM_PREFIX)/bin/llvm-objcopy
 OBJDUMP := $(LLVM_PREFIX)/bin/llvm-objdump
 READELF := $(LLVM_PREFIX)/bin/llvm-readelf
 SIZE    := $(LLVM_PREFIX)/bin/llvm-size
+NM      := $(LLVM_PREFIX)/bin/llvm-nm
 TARGET_FLAGS := --target=riscv32-unknown-elf
 LINKER_FLAGS := --ld-path=$(LLD_PREFIX)/bin/ld.lld
 else
@@ -47,11 +49,13 @@ COMMON_FLAGS := $(TARGET_FLAGS) $(ARCH_FLAGS) -O2 -Wall -Wextra \
                 -ffreestanding -fno-builtin -fno-pic -mstrict-align \
                 -fno-stack-protector -fno-unwind-tables \
                 -fno-asynchronous-unwind-tables -ffunction-sections \
-                -fdata-sections -Iinclude
+                -fdata-sections -fno-jump-tables -msmall-data-limit=0 \
+                -Werror -Iinclude
 CFLAGS  := $(COMMON_FLAGS)
 ASFLAGS := $(COMMON_FLAGS)
 LDFLAGS := $(TARGET_FLAGS) $(LINKER_FLAGS) $(ARCH_FLAGS) -nostdlib \
-           -nostartfiles -T linker.ld -Wl,--gc-sections -Wl,--no-relax
+           -nostartfiles -T linker.ld -Wl,--gc-sections -Wl,--no-relax \
+           -Wl,-Map=$(BUILD_DIR)/$(TARGET).map
 
 SRCS := $(wildcard src/*.c) $(wildcard src/*.S)
 OBJS := $(patsubst src/%,$(BUILD_DIR)/%,$(SRCS))
@@ -64,9 +68,9 @@ SMOKE_ELF := $(BUILD_DIR)/toolchain_smoke.elf
 SMOKE_BIN := $(BUILD_DIR)/toolchain_smoke.bin
 SMOKE_ASM := $(BUILD_DIR)/toolchain_smoke.asm
 
-.PHONY: all clean disasm toolchain-info toolchain-check
+.PHONY: all clean disasm verify toolchain-info toolchain-check
 
-all: $(OUT_COE) disasm
+all: $(OUT_COE) disasm verify
 
 toolchain-info:
 	@echo "TOOLCHAIN=$(TOOLCHAIN)"
@@ -74,6 +78,7 @@ toolchain-info:
 	@echo "LINKER=$(if $(LINKER_FLAGS),$(LLD_PREFIX)/bin/ld.lld,$(CC))"
 	@echo "OBJCOPY=$(OBJCOPY)"
 	@echo "OBJDUMP=$(OBJDUMP)"
+	@echo "NM=$(NM)"
 
 toolchain-check: toolchain-info $(SMOKE_ELF)
 	$(OBJCOPY) -O binary $(SMOKE_ELF) $(SMOKE_BIN)
@@ -113,6 +118,13 @@ $(OUT_COE): $(BUILD_DIR)/$(TARGET).bin | $(BUILD_DIR)
 
 disasm: $(BUILD_DIR)/$(TARGET).elf
 	$(OBJDUMP) -d -M no-aliases $< > $(BUILD_DIR)/$(TARGET).asm
+
+verify: $(BUILD_DIR)/$(TARGET).elf
+	@undefined=`$(NM) -u $<`; \
+	 test -z "$$undefined" || { echo "Undefined symbols:"; echo "$$undefined"; exit 1; }
+	@$(READELF) -A $< | grep -q 'rv32i' || { echo "error: ELF is not RV32I"; exit 1; }
+	$(SIZE) $<
+	@echo "RV32I application verification passed"
 
 clean:
 	rm -rf $(BUILD_DIR)

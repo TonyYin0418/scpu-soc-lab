@@ -48,7 +48,7 @@ make TOOLCHAIN=gnu toolchain-check
 
 ## 构建约定
 
-加入 `src/crt0.S` 和游戏源文件后，在本目录运行：
+在本目录运行：
 
 ```bash
 make
@@ -60,7 +60,7 @@ make
 ../../coe/app/dino/I_dino_game.coe
 ```
 
-当前还没有 `src/crt0.S` / `src/main.c`，因此完整的 `make` 会明确提示缺少应用源文件；交叉编译环境可先用 `make toolchain-check` 独立验证。
+当前已加入 `crt0.S`、MMIO/VGA/键盘基础驱动和最小启动程序。`make` 可以生成完整 ELF、BIN、反汇编与 COE；当前启动画面写出 `SCPU DINO BOOT OK`，数码管调试值为 `D1000000`。完整游戏逻辑在下一里程碑加入。
 
 ## MMIO 快速参考
 

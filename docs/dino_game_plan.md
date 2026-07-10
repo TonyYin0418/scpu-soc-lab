@@ -177,7 +177,7 @@ build/dino.asm
 ../../coe/app/dino/I_dino_game.coe
 ```
 
-当前仓库还没有放入 `crt0.S` / `main.c`，所以完整游戏尚不能生成；交叉编译、链接、objcopy 和反汇编链路已经由 `tests/toolchain_smoke.S` 验证。下一步应加入最小启动程序并生成第一个 COE。
+当前已加入 `crt0.S`、`main.c`、MMIO/VGA/键盘基础驱动并生成第一个 COE；顶层仿真可观察到启动调试值 `D1000000`。下一步在该基础上加入游戏状态机、角色/障碍、碰撞、计分和重开流程。
 
 支持的工具链：
 

@@ -277,6 +277,8 @@ python3 sim/run_top_board_sim.py --imem coe/board/I_vga_text_smoke.coe --sw 0000
   - `tests/toolchain_smoke.S`：只含 RV32I 基础指令的交叉编译环境自检。
 - 设计计划在 `docs/dino_game_plan.md`，包含游戏循环、VGA 文本模式方案、PS/2 按键方案、PR 协作规则和待确认问题。
 - 当前建议先做 80x60 ASCII 文本风格游戏，使用 `0xC0000000` VGA 文本显存和 `0xD0000000` PS/2 键盘 MMIO；后续若时间充足再扩展为图形 framebuffer。
+- 已完成 DINO 裸机启动和基础驱动：`crt0.S` 设置栈、复制 `.data`、清零 `.bss`；`vga_text.c` 提供清屏/字符串/数字绘制；`keyboard.c` 处理 PS/2 make/break/extended 扫描码和板载按钮。
+- 当前基础 smoke 使用 `make` 可生成 756 字节 RV32I 程序和 `coe/app/dino/I_dino_game.coe`；top 仿真在第 49177 周期写出启动标志 `D1000000`。
 - `ROM_D` 使用 Distributed Memory Generator，`RAM_B` 使用 Block Memory Generator；两者必须在 Vivado 中生成，仓库当前只有连接接口，没有伪造可综合实现。
 - `SCPU` 与 CPU 外围系统必须保持边界清晰。第一步只验证老师 EDF 能在外围系统中运行；替换自己的 CPU 时，接口需匹配 `edf/SCPU.v`，不要修改外围网表。
 - 当前流水线分支的 `IO/clk_div.v` 在 100 MHz 输入下固定使用 `clkdiv[0]` 经 `BUFG` 后作为 CPU 时钟，频率 50 MHz。`SW[2]` 端口保留给原理图接口兼容，但当前不再用于运行时快/慢时钟选择。
