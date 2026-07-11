@@ -279,4 +279,4 @@ python3 sim/run_top_board_sim.py --imem coe/board/I_vga_text_smoke.coe --sw 0000
 - 自研 CPU 兼容策略：`rtl/SCPU.v` 必须保持老师板级端口名，包括 `MIO_ready`、`dm_ctrl`、`CPU_MIO`、`INT`。当前 60–70 分阶段暂不实现中断，`INT` 和 `MIO_ready` 只保留接口；`CPU_MIO` 初版固定为 `1'b0`。
 - 计时中断和按钮单步暂不属于本次基线。50 MHz 运行已通过 `clkdiv[0] -> BUFG` 实板验证；如未来恢复 SW[2] 快慢切换，应使用专用时钟 mux（如 BUFGMUX）或确保只在 reset 时选择，不能回到普通 `?:` clock mux。
 
-当前下一步是以现有单周期 CPU 为黄金参考，准备 70–80 分阶段的冒险流水线 CPU 方案。macOS 上的 Icarus 端口检查不能验证 EDF 网表、IP 或时序，最终仍以 Vivado 和开发板确认为准。
+当前下一步是恐龙游戏的实板验收：在 Windows Vivado 侧同步 `dino` 分支的 `IO/MIO_BUS.v`、`rtl/SCPU.v`、`board/top.v`，把 `ROM_D`/`RAM_B` 的 COE 换成 `I_dino.coe`/`D_dino.coe`，按 `MANUAL.md` 7.8 验收。macOS 上的 Icarus 仿真不能验证 EDF 网表、IP 或时序，最终仍以 Vivado 和开发板确认为准。

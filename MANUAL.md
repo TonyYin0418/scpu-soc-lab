@@ -14,6 +14,10 @@
 
 当前 `feature/ps2-keyboard` 分支在已提交的单级中断/异常版本基础上接入 PS/2 键盘。老师提供的 PS2 文件已整理到 `IO/PS2/`；板级系统改用自写 `IO/MIO_BUS.v`，新增 `0xD0000000`/`0xD0000004` 键盘 MMIO 地址，同时保留原 RAM、数码管和 LED 地址行为。
 
+当前 `dino` 分支（从 VGA 里程碑切出）实现 90–100 分阶段的 VGA 恐龙游戏：
+软件编程老师 `Counter_x` 产生周期计时中断驱动游戏帧（见 4.5.1），游戏本体
+为 C + 汇编启动代码（见 4.5.2、`game/`），实板验收步骤见 7.8。
+
 所有命令默认在项目根目录 `SCPU_SOC` 中执行。
 
 ## 2. 环境检查
@@ -814,6 +818,45 @@ board/top.v
 4. 重新执行综合、实现、生成 bitstream 和 Program Device。
 
 如果 Vivado 报 `duplicate definition of SCPU`，说明老师 `edf/SCPU.edf` 和自研 `rtl/SCPU.v` 被同时加入了工程；必须只保留其中一个。
+
+### 7.8 恐龙游戏实板验收（dino 分支）
+
+`dino` 分支相对上一次板级基线没有增删 Verilog 文件，Vivado 工程源文件集
+不变，但以下三个文件内容有改动，工程里必须是最新版本：
+
+```text
+IO/MIO_BUS.v   # 新增 0xF0000004 counter_we 译码
+rtl/SCPU.v     # INT 改上升沿置 pending
+board/top.v    # vga_text_ram 写时钟改 Clk_CPU
+```
+
+操作步骤：
+
+1. 同步以上三个文件到 Vivado 工程（其余源文件、XDC 不变）。
+2. `ROM_D` 的 COE 换成 `coe/board/I_dino.coe`，重新生成 IP。
+3. `RAM_B` 的 COE 换成 `coe/board/D_dino.coe`（游戏的常量数据放在数据
+   RAM；不换这个 COE 屏幕上标题/提示文字会是乱码）。
+4. 综合、实现、生成 bitstream，Program Device（或 macOS 侧
+   `openFPGALoader -b nexys_a7_100 top.bit`）。
+
+开关设置：
+
+```text
+SW[15] = 0   # 显示文本显存（=1 是绿屏排错）
+SW[14] = 0   # 板上 30 Hz 帧率（=1 是仿真快频，板上会快到没法玩）
+SW[7:5] = 000  # 数码管显示游戏帧号心跳
+```
+
+预期现象：
+
+- 复位后屏幕显示 `DINO GAME`、`SCORE 00000`、地面线和恐龙 `D`；
+- 数码管持续递增（计时中断心跳）；仙人掌 `#` 从右向左移动；
+- 按任意按钮或 PS/2 空格起跳；跳过仙人掌 SCORE +1；
+- 撞上仙人掌显示 `GAME OVER` / `PRESS JUMP TO RESTART`，再按跳跃键重开。
+
+若画面不动但数码管在增长，优先检查 `RAM_B` 是否用了 `D_dino.coe`；
+若数码管也不动，说明计时中断没起来，检查 `IO/MIO_BUS.v` 和 `rtl/SCPU.v`
+是否为 dino 分支版本。
 
 ## 8. 从汇编生成 COE
 
