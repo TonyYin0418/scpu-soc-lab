@@ -262,8 +262,12 @@ module top(
     wire        vga_text_we = mem_w && (addr_bus[31:16] == 16'hc000);
     wire [12:0] vga_text_addr = addr_bus[14:2];
 
+    // CPU 总线信号在 negedge Clk_CPU 更新（流水线寄存器下降沿翻转）。
+    // 显存写时钟必须用 Clk_CPU：写发生在 posedge Clk_CPU，距离总线变化
+    // 有半个周期建立时间。若用 Clk_IO(=~Clk_CPU)，采样沿和总线更新沿重合，
+    // 上板会出现随机显存写坏。
     vga_text_ram U12_VGA_TEXT_RAM(
-        .cpu_clk  (Clk_IO),
+        .cpu_clk  (Clk_CPU),
         .cpu_we   (vga_text_we),
         .cpu_waddr(vga_text_addr),
         .cpu_wdata(Cpu_data2bus[15:0]),

@@ -75,6 +75,7 @@
 - 当前进入 `feature/ps2-keyboard` 分支。已把用户提供的 `PS2接口` 文件整理到 `IO/PS2/`，并开始将 PS/2 键盘作为 MMIO 外设接入板级系统。
 - 当前进入 `dino` 分支（自 `merge: vga display milestone` 切出），目标是 90–100 分阶段的 VGA 恐龙游戏，按老师要求用计时中断驱动游戏帧。
 - `dino` 分支已打通软件编程计时中断整条链路：`IO/MIO_BUS.v` 新增 `0xF0000004` 的 `counter_we` 译码（通道选择沿用老师 SPIO 锁存 `0xF0000000` 低 2 位的约定）；`rtl/SCPU.v` 的 `int_pending` 改为 `INT` 上升沿置位，避免 Counter_x 一拍宽脉冲（1 个 clk0 周期 ≈ 64 个 CPU 周期）在 ERET 后重复触发；top 仿真改用真实 `IO/MIO_BUS.v`，删除 `sim/board_sim_models.v` 中已脱节的 MIO_BUS 行为副本。冒烟程序 `asm2coe/timer_smoke.S`（`coe/board/I_timer_smoke.coe`）在不使用 `--force-int-*` 的情况下验证周期中断，`--check-timer-int` 通过，且既有全部回归（Test-8/37/AUIPC、trap、VGA、PS/2、exception smoke、双 top 编译检查）保持通过。
+- `dino` 分支已修正 VGA 文本显存写时钟：`board/top.v` 中 `vga_text_ram.cpu_clk` 从 `Clk_IO` 改为 `Clk_CPU`。CPU 总线在 negedge Clk_CPU 更新，写显存改在 posedge Clk_CPU 留出半周期建立时间；原 `Clk_IO(=~Clk_CPU)` 的采样沿与总线更新沿重合，零延迟仿真看不出问题，上板会随机写坏显存。VGA 绿屏/文本、timer smoke 与双 top 编译检查回归通过。
 
 支持的指令如下：
 
