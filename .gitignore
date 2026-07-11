@@ -28,3 +28,7 @@ asm2coe/*.bin
 asm2coe/*.asm
 asm2coe/*.coe
 asm2coe/mcode.txt
+
+# 游戏构建中间产物；最终 COE 由 make install 复制到 coe/board/ 后提交
+game/build/
+game/*.coe

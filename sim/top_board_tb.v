@@ -39,6 +39,10 @@ module top_board_tb;
     integer check_vga_text;
     integer check_timer_int;
     integer timer_int_last_cycle;
+    integer dump_vga_text_at;
+    integer dump_row;
+    integer dump_col;
+    reg [7:0] dump_ch;
     integer vga_green_samples;
     integer vga_hs_edges;
     integer vga_vs_edges;
@@ -96,6 +100,7 @@ module top_board_tb;
         check_vga_text = 0;
         check_timer_int = 0;
         timer_int_last_cycle = -1;
+        dump_vga_text_at = -1;
         vga_green_samples = 0;
         vga_hs_edges = 0;
         vga_vs_edges = 0;
@@ -124,6 +129,7 @@ module top_board_tb;
         check_vga = $test$plusargs("CHECK_VGA_GREEN");
         check_vga_text = $test$plusargs("CHECK_VGA_TEXT");
         check_timer_int = $test$plusargs("CHECK_TIMER_INT");
+        void'($value$plusargs("DUMP_VGA_TEXT_AT=%d", dump_vga_text_at));
         void'($value$plusargs("SW=%h", sw_value));
         void'($value$plusargs("IMEM=%s", imem_file));
         void'($value$plusargs("DMEM=%s", dmem_file));
@@ -309,6 +315,22 @@ module top_board_tb;
                 last_disp_num = U_TOP.Disp_num;
                 $display("[TOP_SIM] cycle=%0d pc=%08x sevenseg_hex=%08x an=%02x seg=%02x",
                          cycle, U_TOP.PC, U_TOP.Disp_num, disp_an_o, disp_seg_o);
+            end
+
+            // 把文本显存按 80x60 打印成 ASCII 画面，检查游戏渲染结果。
+            if ((dump_vga_text_at >= 0) && (cycle == dump_vga_text_at)) begin
+                $display("[TOP_SIM] VGA text dump at cycle=%0d:", cycle);
+                for (dump_row = 0; dump_row < 60; dump_row = dump_row + 1) begin
+                    $write("[VGA %02d] ", dump_row);
+                    for (dump_col = 0; dump_col < 80; dump_col = dump_col + 1) begin
+                        dump_ch = U_TOP.U12_VGA_TEXT_RAM.mem[dump_row * 80 + dump_col][7:0];
+                        if ((dump_ch >= 8'h20) && (dump_ch < 8'h7f))
+                            $write("%c", dump_ch);
+                        else
+                            $write(".");
+                    end
+                    $write("\n");
+                end
             end
 
             if (cycle > max_cycles) begin

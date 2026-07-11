@@ -349,6 +349,33 @@ tick 至少间隔 1000 周期，同一脉冲重复触发（中断风暴）会被
 注意：top 仿真现在直接编译 `IO/MIO_BUS.v` 真实译码（`top_board_sim_files.f`），
 `sim/board_sim_models.v` 里原来的 MIO_BUS 行为副本已删除。
 
+### 4.5.2 VGA 恐龙游戏构建与 top 仿真
+
+游戏源码在 `game/`：`game.c`（游戏逻辑，C）+ `start.S`（复位入口、中断向量、
+计时中断 ISR）+ `linker.ld`。构建（Homebrew 工具链）：
+
+```bash
+cd game && make PREFIX=riscv64-elf- install
+```
+
+`install` 生成并复制 `coe/board/I_dino.coe`（指令 ROM）和 `coe/board/D_dino.coe`
+（数据 RAM；C 的字符串等常量放这里，因为哈佛结构下 lw 读不到指令 ROM）。
+Makefile 自带 4KB 尺寸检查，超限报 `SIZE OVERFLOW`。
+
+top 仿真（`SW[14]=1` 选仿真快频，40 拍/帧）：
+
+```bash
+python3 sim/run_top_board_sim.py \
+  --imem coe/board/I_dino.coe \
+  --dmem coe/board/D_dino.coe \
+  --sw 4000 \
+  --max-cycles 60000 \
+  --dump-vga-text-at 55000
+```
+
+`--dump-vga-text-at N` 在第 N 周期把 80x60 文本显存打印成 ASCII 画面。
+预期：`display_write` 每帧递增（tick 心跳），画面有标题、SCORE、地面和恐龙。
+
 ### 4.6 PS/2 键盘 MMIO top 仿真
 
 当前 `feature/ps2-keyboard` 分支已接入老师提供的 PS/2 接口文件，并整理为：

@@ -55,6 +55,14 @@
 - 用途：软件编程 Counter_x 计时中断的端到端冒烟程序；仿真命令见 `MANUAL.md` 4.5.1
 - 现象：中断服务程序把递增 tick 写 `0xE0000000`，`--check-timer-int` 校验周期间隔
 
+### `I_dino.coe` / `D_dino.coe`
+
+- 来源：`game/`（C + start.S），构建命令 `cd game && make PREFIX=riscv64-elf- install`
+- 用途：VGA 恐龙游戏。`I_dino.coe` 导入 `ROM_D`，`D_dino.coe` 导入 `RAM_B`
+  （存放 C 的 .rodata/.data；板级系统是哈佛结构，lw 读不到指令 ROM）
+- 帧驱动：计时中断；`SW[14]=1` 时用仿真快频（40 拍/帧），`SW[14]=0` 上板约 30 Hz
+- 仿真命令见 `MANUAL.md` 游戏章节
+
 ### `I_testac.coe`
 
 - 用途：当前单周期 CPU 实板验收 ROM 程序，导入 Vivado `ROM_D`
