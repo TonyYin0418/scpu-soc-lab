@@ -77,6 +77,10 @@ def main() -> None:
     parser.add_argument("--force-int-start", type=int, help="force timer INT high at this top_tb cycle")
     parser.add_argument("--force-int-end", type=int, help="release forced timer INT at this top_tb cycle")
     parser.add_argument("--send-ps2-key", help="send a PS/2 scan code byte in top simulation, hex")
+    parser.add_argument("--send-ps2-at", type=int,
+                        help="delay PS/2 send until this top_tb cycle (byte lands ~66k cycles later)")
+    parser.add_argument("--press-btn-at", type=int,
+                        help="press BTN0 at this top_tb cycle for 30k cycles")
     args = parser.parse_args()
 
     imem_coe = (ROOT / args.imem).resolve()
@@ -114,6 +118,10 @@ def main() -> None:
         vvp_args.append(f"+FORCE_INT_END={args.force_int_end}")
     if args.send_ps2_key is not None:
         vvp_args.append(f"+SEND_PS2_KEY={args.send_ps2_key}")
+    if args.send_ps2_at is not None:
+        vvp_args.append(f"+SEND_PS2_AT={args.send_ps2_at}")
+    if args.press_btn_at is not None:
+        vvp_args.append(f"+PRESS_BTN_AT={args.press_btn_at}")
 
     out_path = ROOT / args.out
     run([

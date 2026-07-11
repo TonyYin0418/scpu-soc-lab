@@ -76,6 +76,7 @@
 - 当前进入 `dino` 分支（自 `merge: vga display milestone` 切出），目标是 90–100 分阶段的 VGA 恐龙游戏，按老师要求用计时中断驱动游戏帧。
 - `dino` 分支已打通软件编程计时中断整条链路：`IO/MIO_BUS.v` 新增 `0xF0000004` 的 `counter_we` 译码（通道选择沿用老师 SPIO 锁存 `0xF0000000` 低 2 位的约定）；`rtl/SCPU.v` 的 `int_pending` 改为 `INT` 上升沿置位，避免 Counter_x 一拍宽脉冲（1 个 clk0 周期 ≈ 64 个 CPU 周期）在 ERET 后重复触发；top 仿真改用真实 `IO/MIO_BUS.v`，删除 `sim/board_sim_models.v` 中已脱节的 MIO_BUS 行为副本。冒烟程序 `asm2coe/timer_smoke.S`（`coe/board/I_timer_smoke.coe`）在不使用 `--force-int-*` 的情况下验证周期中断，`--check-timer-int` 通过，且既有全部回归（Test-8/37/AUIPC、trap、VGA、PS/2、exception smoke、双 top 编译检查）保持通过。
 - `dino` 分支已建立游戏软件骨架 `game/`（C + start.S + linker.ld，Homebrew `riscv64-elf-gcc -march=rv32i` 编译）：哈佛结构下 .text 出 `I_dino.coe`、.rodata/.data 出 `D_dino.coe` 初始化 RAM_B；计时中断 ISR 只递增 ticks，主循环按 tick 推进帧；`SW[14]` 选择仿真快频/板上 30 Hz。top 仿真新增 `--dump-vga-text-at`，已验证清屏、标题/SCORE/地面/恐龙渲染和每帧心跳。
+- `dino` 分支已完成恐龙游戏 gameplay：固定弧线跳跃（按钮按下沿 / PS/2 空格，含 F0 断码跳过）、LFSR 生成高 1–2 的仙人掌每帧左移、同列且离地高度小于仙人掌高度判相撞、移出左边界手工十进制 +1 分、GAME OVER 后按跳跃键重开。渲染为增量式（每帧只擦/画变化格子；整带重画会让移动物体闪烁，此结论也与 origin/main 后续 `f90c80e` 的独立发现一致）。top 仿真定向用例：无输入撞仙人掌出 GAME OVER、PS/2 定时起跳得 1 分、按钮定时起跳得 1 分（新增 `--press-btn-at`）、GAME OVER 后重开归零，全部通过；全量回归保持通过。
 - `dino` 分支已修正 VGA 文本显存写时钟：`board/top.v` 中 `vga_text_ram.cpu_clk` 从 `Clk_IO` 改为 `Clk_CPU`。CPU 总线在 negedge Clk_CPU 更新，写显存改在 posedge Clk_CPU 留出半周期建立时间；原 `Clk_IO(=~Clk_CPU)` 的采样沿与总线更新沿重合，零延迟仿真看不出问题，上板会随机写坏显存。VGA 绿屏/文本、timer smoke 与双 top 编译检查回归通过。
 
 支持的指令如下：

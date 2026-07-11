@@ -34,6 +34,8 @@ module top_board_tb;
     integer force_int_start;
     integer force_int_end;
     integer send_ps2_key;
+    integer send_ps2_at;
+    integer press_btn_at;
     integer sw_value;
     integer check_vga;
     integer check_vga_text;
@@ -95,6 +97,8 @@ module top_board_tb;
         force_int_start = -1;
         force_int_end = -1;
         send_ps2_key = -1;
+        send_ps2_at = 0;
+        press_btn_at = -1;
         sw_value = 16'h0000; // 默认 SW[7:5]=000，看程序写入的显示通道 data0。
         check_vga = 0;
         check_vga_text = 0;
@@ -125,6 +129,8 @@ module top_board_tb;
         void'($value$plusargs("FORCE_INT_START=%d", force_int_start));
         void'($value$plusargs("FORCE_INT_END=%d", force_int_end));
         void'($value$plusargs("SEND_PS2_KEY=%h", send_ps2_key));
+        void'($value$plusargs("SEND_PS2_AT=%d", send_ps2_at));
+        void'($value$plusargs("PRESS_BTN_AT=%d", press_btn_at));
         dump_vcd = $test$plusargs("DUMP_VCD");
         check_vga = $test$plusargs("CHECK_VGA_GREEN");
         check_vga_text = $test$plusargs("CHECK_VGA_TEXT");
@@ -170,6 +176,9 @@ module top_board_tb;
         #100 rstn = 1'b1;
         if (send_ps2_key >= 0) begin
             #1000;
+            // 可选：等到指定周期再发码。一个 PS/2 字节要 11 位 x 60us，
+            // 按码在发送开始后约 66000 周期才进入 ready。
+            wait (cycle >= send_ps2_at);
             send_ps2_byte(send_ps2_key[7:0]);
         end
     end
@@ -241,6 +250,18 @@ module top_board_tb;
     always @(posedge clk) begin
         if (rstn) begin
             cycle = cycle + 1;
+
+            // 模拟按下 BTN0 约 30000 周期（覆盖游戏若干帧）后松开。
+            if (press_btn_at >= 0) begin
+                if (cycle == press_btn_at) begin
+                    btn_i = 5'b00001;
+                    $display("[TOP_SIM] cycle=%0d press BTN0", cycle);
+                end
+                if (cycle == press_btn_at + 30000) begin
+                    btn_i = 5'b00000;
+                    $display("[TOP_SIM] cycle=%0d release BTN0", cycle);
+                end
+            end
 
             if ((force_int_start >= 0) && (cycle == force_int_start)) begin
                 force U_TOP.counter0_OUT = 1'b1;

@@ -376,6 +376,38 @@ python3 sim/run_top_board_sim.py \
 `--dump-vga-text-at N` 在第 N 周期把 80x60 文本显存打印成 ASCII 画面。
 预期：`display_write` 每帧递增（tick 心跳），画面有标题、SCORE、地面和恐龙。
 
+玩法与实现要点：
+
+- 恐龙固定在第 8 列，站立占 38/39 两行；仙人掌 `#`（高 1 或 2，LFSR 随机）
+  每帧左移一列，移出左边界 +1 分；
+- 任一按钮按下沿或 PS/2 空格（通码 0x29，自动跳过 F0 断码）触发固定弧线
+  跳跃（14 帧，最高离地 6 行）；同列且离地高度小于仙人掌高度判定相撞；
+- 相撞显示 GAME OVER，再按一次跳跃键重新开始；
+- 渲染是增量式的：每帧只擦/画变化的格子，不整屏重画（整屏重画会让移动
+  物体闪烁）。
+
+gameplay 定向仿真（时机数值针对 `SW=4000` 快频与固定 LFSR 种子）：
+
+```bash
+# 不按键：仙人掌撞上恐龙，预期画面出现 GAME OVER / PRESS JUMP TO RESTART
+python3 sim/run_top_board_sim.py --imem coe/board/I_dino.coe --dmem coe/board/D_dino.coe \
+  --sw 4000 --max-cycles 1550000 --dump-vga-text-at 1500000
+
+# PS/2 空格定时起跳：跳过第一个仙人掌，预期 SCORE 00001
+python3 sim/run_top_board_sim.py --imem coe/board/I_dino.coe --dmem coe/board/D_dino.coe \
+  --sw 4000 --max-cycles 1550000 --send-ps2-key 29 --send-ps2-at 1180000 \
+  --dump-vga-text-at 1500000
+
+# 按钮定时起跳：同上，走 BTN 输入路径
+python3 sim/run_top_board_sim.py --imem coe/board/I_dino.coe --dmem coe/board/D_dino.coe \
+  --sw 4000 --max-cycles 1550000 --press-btn-at 1250000 --dump-vga-text-at 1500000
+
+# GAME OVER 后按键重开：预期画面回到初始状态、SCORE 归零
+python3 sim/run_top_board_sim.py --imem coe/board/I_dino.coe --dmem coe/board/D_dino.coe \
+  --sw 4000 --max-cycles 1700000 --send-ps2-key 29 --send-ps2-at 1450000 \
+  --dump-vga-text-at 1650000
+```
+
 ### 4.6 PS/2 键盘 MMIO top 仿真
 
 当前 `feature/ps2-keyboard` 分支已接入老师提供的 PS/2 接口文件，并整理为：
