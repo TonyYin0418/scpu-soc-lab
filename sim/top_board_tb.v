@@ -37,6 +37,8 @@ module top_board_tb;
     integer sw_value;
     integer check_vga;
     integer check_vga_text;
+    integer check_timer_int;
+    integer timer_int_last_cycle;
     integer vga_green_samples;
     integer vga_hs_edges;
     integer vga_vs_edges;
@@ -92,6 +94,8 @@ module top_board_tb;
         sw_value = 16'h0000; // 默认 SW[7:5]=000，看程序写入的显示通道 data0。
         check_vga = 0;
         check_vga_text = 0;
+        check_timer_int = 0;
+        timer_int_last_cycle = -1;
         vga_green_samples = 0;
         vga_hs_edges = 0;
         vga_vs_edges = 0;
@@ -119,6 +123,7 @@ module top_board_tb;
         dump_vcd = $test$plusargs("DUMP_VCD");
         check_vga = $test$plusargs("CHECK_VGA_GREEN");
         check_vga_text = $test$plusargs("CHECK_VGA_TEXT");
+        check_timer_int = $test$plusargs("CHECK_TIMER_INT");
         void'($value$plusargs("SW=%h", sw_value));
         void'($value$plusargs("IMEM=%s", imem_file));
         void'($value$plusargs("DMEM=%s", dmem_file));
@@ -150,6 +155,8 @@ module top_board_tb;
             $display("[TOP_SIM] CHECK_VGA enabled: expect SW[15]=1 green test screen");
         if (check_vga_text)
             $display("[TOP_SIM] CHECK_VGA_TEXT enabled: expect writes cell0=ff4f, cell1=ff4b");
+        if (check_timer_int)
+            $display("[TOP_SIM] CHECK_TIMER_INT enabled: expect ISR display_write ticks 1..3 without forced INT");
         if (force_int_start >= 0) begin
             force U_TOP.counter0_OUT = 1'b0;
             $display("[TOP_SIM] timer INT held low until cycle %0d", force_int_start);
@@ -246,6 +253,22 @@ module top_board_tb;
                 $display("[TOP_SIM] cycle=%0d pc=%08x display_write=%08x",
                          cycle, U_TOP.PC, U_TOP.Cpu_data2bus);
                 maybe_finish_testac(U_TOP.Cpu_data2bus);
+                if (check_timer_int) begin
+                    // 相邻两次 tick 必须隔开一个像样的周期。间隔过近说明
+                    // 同一个 INT 脉冲重复触发（中断风暴），判 FAIL。
+                    if ((timer_int_last_cycle >= 0) &&
+                        (cycle - timer_int_last_cycle < 1000)) begin
+                        $display("[TOP_SIM][FAIL] timer ticks only %0d cycles apart: interrupt storm",
+                                 cycle - timer_int_last_cycle);
+                        $finish;
+                    end
+                    timer_int_last_cycle = cycle;
+                    if (U_TOP.Cpu_data2bus >= 32'd3) begin
+                        $display("[TOP_SIM][PASS] timer interrupt fired %0d times with periodic spacing",
+                                 U_TOP.Cpu_data2bus);
+                        $finish;
+                    end
+                end
             end
 
             // 后续 VGA 软件写屏时，用这行确认 CPU 已写入文本显存。

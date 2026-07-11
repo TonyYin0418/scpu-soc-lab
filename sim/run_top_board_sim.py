@@ -70,6 +70,8 @@ def main() -> None:
     parser.add_argument("--dump-vcd", action="store_true", help="dump build/top_board_tb.vcd")
     parser.add_argument("--check-vga", action="store_true", help="check VGA green test path; use --sw 8000")
     parser.add_argument("--check-vga-text", action="store_true", help="check CPU writes OK into VGA text MMIO")
+    parser.add_argument("--check-timer-int", action="store_true",
+                        help="check software-programmed Counter_x timer interrupts fire repeatedly")
     parser.add_argument("--force-int-start", type=int, help="force timer INT high at this top_tb cycle")
     parser.add_argument("--force-int-end", type=int, help="release forced timer INT at this top_tb cycle")
     parser.add_argument("--send-ps2-key", help="send a PS/2 scan code byte in top simulation, hex")
@@ -100,6 +102,8 @@ def main() -> None:
         vvp_args.append("+CHECK_VGA_GREEN")
     if args.check_vga_text:
         vvp_args.append("+CHECK_VGA_TEXT")
+    if args.check_timer_int:
+        vvp_args.append("+CHECK_TIMER_INT")
     if args.force_int_start is not None:
         vvp_args.append(f"+FORCE_INT_START={args.force_int_start}")
     if args.force_int_end is not None:

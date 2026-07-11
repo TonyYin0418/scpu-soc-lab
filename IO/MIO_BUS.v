@@ -5,7 +5,11 @@
 // 保持老师原 MIO_BUS 的主要地址行为：
 //   RAM          : 其他地址段，读写数据 RAM
 //   0xE0000000  : 七段数码管写入口；读 BTN/SW
-//   0xF0000000  : LED / SPIO 写入口；读 LED 状态
+//   0xF0000000  : LED / SPIO 写入口；读 LED 状态。SPIO 同时把写数据的
+//                 低 2 位锁存为 Counter_x 的通道选择（老师 Counter_8253
+//                 注释约定：f0000000 bit1 bit0 选通道）
+//   0xF0000004  : Counter_x 写入口；数值写入当前通道选择指向的
+//                 计数值寄存器（通道 0..2）或控制字（通道 3）
 //
 // 本工程新增 PS/2 键盘 MMIO：
 //   0xD0000000  : 读 {23'b0, ps2_ready, ps2_key}，并产生 ps2_read 脉冲
@@ -48,6 +52,7 @@ module MIO_BUS(
     wire is_ps2_scan = (addr_bus == 32'hd000_0004);
     wire is_gpioe    = (addr_bus == 32'he000_0000);
     wire is_gpiof    = (addr_bus == 32'hf000_0000);
+    wire is_counter  = (addr_bus == 32'hf000_0004);
     wire is_ram      = !is_vga &&
                        (addr_bus[31:28] != 4'hd) &&
                        (addr_bus[31:28] != 4'he) &&
@@ -62,9 +67,9 @@ module MIO_BUS(
     assign GPIOe0000000_we = mem_w && is_gpioe;
     assign GPIOf0000000_we = mem_w && is_gpiof;
 
-    // 课堂给出的 MIO_BUS 版本没有实际接计数器写地址；这里保持不写计数器，
-    // 避免改变已通过验收的外设行为。
-    assign counter_we = 1'b0;
+    // 计时器写通道。老师参考 MIO_BUS 声明了 counter_we 但未给出译码地址，
+    // 这里选用通道选择地址旁边的 0xF0000004 作为写入口。
+    assign counter_we = mem_w && is_counter;
 
     assign Peripheral_in = Cpu_data2bus;
 

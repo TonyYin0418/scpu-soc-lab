@@ -1,8 +1,10 @@
 # 工具链设置（如果不在PATH中，可以修改为完整路径）
-AS = riscv64-unknown-elf-as
-LD = riscv64-unknown-elf-ld
-OBJCOPY = riscv64-unknown-elf-objcopy
-OBJDUMP = riscv64-unknown-elf-objdump
+# 前缀可覆盖，例如 Homebrew 工具链：make PREFIX=riscv64-elf-
+PREFIX ?= riscv64-unknown-elf-
+AS = $(PREFIX)as
+LD = $(PREFIX)ld
+OBJCOPY = $(PREFIX)objcopy
+OBJDUMP = $(PREFIX)objdump
 
 # 编译选项
 ASFLAGS = -march=rv32i -mabi=ilp32

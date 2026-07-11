@@ -56,65 +56,9 @@ module RAM_B(
     assign douta = RAM[addra];
 endmodule
 
-module MIO_BUS(
-    input             clk,
-    input             rst,
-    input      [4:0]  BTN,
-    input      [15:0] SW,
-    input      [31:0] PC,
-    input             mem_w,
-    input      [31:0] Cpu_data2bus,
-    input      [31:0] addr_bus,
-    input      [31:0] ram_data_out,
-    input      [15:0] led_out,
-    input      [31:0] counter_out,
-    input             counter0_out,
-    input             counter1_out,
-    input             counter2_out,
-    input      [7:0]  ps2_key,
-    input      [31:0] ps2_scancode,
-    input             ps2_ready,
-    output     [31:0] Cpu_data4bus,
-    output     [31:0] ram_data_in,
-    output     [9:0]  ram_addr,
-    output            data_ram_we,
-    output            GPIOf0000000_we,
-    output            GPIOe0000000_we,
-    output            counter_we,
-    output     [31:0] Peripheral_in,
-    output            ps2_read
-);
-    wire is_vga      = (addr_bus[31:28] == 4'hc);
-    wire is_ps2_key  = (addr_bus == 32'hd000_0000);
-    wire is_ps2_scan = (addr_bus == 32'hd000_0004);
-    wire is_gpioe    = (addr_bus == 32'he000_0000);
-    wire is_gpiof    = (addr_bus == 32'hf000_0000);
-    wire is_ram      = !is_vga &&
-                       (addr_bus[31:28] != 4'hd) &&
-                       (addr_bus[31:28] != 4'he) &&
-                       (addr_bus[31:28] != 4'hf);
-
-    // 当前 board/top.v 的 RAM_B.wea 来自 dm_controller(mem_w)，没有再使用
-    // data_ram_we 二次门控。为避免 MMIO 写显示/LED 时在仿真里误伤普通数据区，
-    // 非 RAM 地址把 ram_addr 指到保留尾地址。
-    assign ram_addr         = is_ram ? addr_bus[11:2] : 10'h3ff;
-    assign ram_data_in      = Cpu_data2bus;
-    assign data_ram_we      = mem_w && is_ram;
-    assign GPIOf0000000_we  = mem_w && is_gpiof;
-    assign GPIOe0000000_we  = mem_w && is_gpioe;
-    assign counter_we       = 1'b0;
-    assign Peripheral_in    = Cpu_data2bus;
-    assign ps2_read         = is_ps2_key && !mem_w;
-
-    assign Cpu_data4bus =
-        is_ram      ? ram_data_out :
-        is_ps2_key  ? {23'b0, ps2_ready, ps2_key} :
-        is_ps2_scan ? ps2_scancode :
-        is_gpiof    ? {14'b0, led_out, 2'b00} :
-        is_gpioe    ? {11'b0, BTN, SW} :
-                      32'b0;
-endmodule
-
+// MIO_BUS 使用真实 RTL（IO/MIO_BUS.v，见 top_board_sim_files.f）。
+// 之前这里有一份行为级副本，与真实译码逐渐脱节（counter_we 常年为 0），
+// 仿真验证不到真实地址译码，故删除。
 module SPIO(
     input             clk,
     input             rst,

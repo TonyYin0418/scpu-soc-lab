@@ -310,6 +310,45 @@ display_write=33330000
 
 如果只能看到最终值而看不到中间值，也正常；这些阶段写入之间间隔很短。
 
+### 4.5.1 软件编程 Counter_x 计时中断 top 仿真
+
+`dino` 分支起，软件可以直接把老师 `Counter_x` 编程为周期中断源，不再依赖
+`--force-int-*`：
+
+- `sw 0xF0000000`：低 2 位经老师 SPIO 锁存为 Counter_x 通道选择（0..2 计数值，3 控制字）；
+- `sw 0xF0000004`：把数据写入当前选中通道（自写 `IO/MIO_BUS.v` 新增的 `counter_we` 译码）；
+- 通道 0 控制字 `bit[2:1]=01` 为周期模式：减到 0 输出一拍脉冲并自动重装；
+- 通道 0 时钟为 `clkdiv[6]`（100 MHz / 128 = 781.25 kHz），计数值 N 时中断周期 = N × 1.28 µs；
+- CPU 侧对 `INT` 上升沿置 pending：一个脉冲恰好触发一次中断，不会在 ERET 后重复触发。
+
+冒烟程序源码 `asm2coe/timer_smoke.S`，构建命令（Homebrew 工具链）：
+
+```bash
+cd asm2coe && make PREFIX=riscv64-elf- TARGET=timer_smoke
+cp timer_smoke.coe ../coe/board/I_timer_smoke.coe
+```
+
+top 仿真命令：
+
+```bash
+python3 sim/run_top_board_sim.py \
+  --imem coe/board/I_timer_smoke.coe \
+  --sw 0000 \
+  --max-cycles 60000 \
+  --check-timer-int
+```
+
+预期输出：`display_write` 依次为 1、2、3，其中第 1 次来自计数器复位后的
+首次下溢沿，第 2、3 次间隔约 6660 周期（编程值 50 拍）。测试台要求相邻
+tick 至少间隔 1000 周期，同一脉冲重复触发（中断风暴）会被判 FAIL：
+
+```text
+[TOP_SIM][PASS] timer interrupt fired 3 times with periodic spacing
+```
+
+注意：top 仿真现在直接编译 `IO/MIO_BUS.v` 真实译码（`top_board_sim_files.f`），
+`sim/board_sim_models.v` 里原来的 MIO_BUS 行为副本已删除。
+
 ### 4.6 PS/2 键盘 MMIO top 仿真
 
 当前 `feature/ps2-keyboard` 分支已接入老师提供的 PS/2 接口文件，并整理为：

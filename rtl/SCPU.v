@@ -58,13 +58,16 @@ module SCPU(
     // SCAUSE ：进入 trap 的原因码。
     // STATUS[0]：EXL/in_trap，进入 trap 后置 1，ERET/ERETN 清 0。
     // INTMASK[6]：允许计时中断。软件可向 0xFFFF_FF00 写入低 8 位更新。
-    // int_pending[6]：INT 输入锁存的计时中断 pending。
+    // int_pending[6]：INT 输入锁存的计时中断 pending。只在 INT 上升沿置位：
+    //   Counter_x 的输出脉冲宽度是一个 clk0 周期（比 ISR 执行时间长），
+    //   电平锁存会让同一个脉冲在 ERET 后立刻再次触发。
     // ---------------------------------------------------------------------
     reg [31:0] SEPC;
     reg [7:0]  SCAUSE;
     reg [7:0]  STATUS;
     reg [7:0]  INTMASK;
     reg [7:0]  int_pending;
+    reg        int_prev;
 
     // ---------------------------------------------------------------------
     // IF：PC 寄存器。ROM 地址直接来自 PC_out。
@@ -479,6 +482,7 @@ module SCPU(
             STATUS <= 8'b0;
             INTMASK <= 8'b0;
             int_pending <= 8'b0;
+            int_prev <= 1'b0;
 
             if_id_valid <= 1'b0;
             if_id_pc <= 32'b0;
@@ -527,7 +531,8 @@ module SCPU(
             mem_wb_wd_sel <= `WDSel_FromALU;
             mem_wb_reg_write <= 1'b0;
         end else begin
-            if (INT)
+            int_prev <= INT;
+            if (INT && !int_prev)
                 int_pending[`INT_TIMER_BIT] <= 1'b1;
 
             // MEM/WB 每拍接收上一拍 MEM 阶段的结果。

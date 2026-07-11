@@ -49,6 +49,12 @@
 - 数据字数：43
 - 配套指令文件：`I_snakeDEMO.coe`
 
+### `I_timer_smoke.coe`
+
+- 来源：`asm2coe/timer_smoke.S`，构建命令 `make PREFIX=riscv64-elf- TARGET=timer_smoke`
+- 用途：软件编程 Counter_x 计时中断的端到端冒烟程序；仿真命令见 `MANUAL.md` 4.5.1
+- 现象：中断服务程序把递增 tick 写 `0xE0000000`，`--check-timer-int` 校验周期间隔
+
 ### `I_testac.coe`
 
 - 用途：当前单周期 CPU 实板验收 ROM 程序，导入 Vivado `ROM_D`

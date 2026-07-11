@@ -73,6 +73,8 @@
 - 流水线实板时钟问题已定位并修正：直接把 `clkdiv[x]` 或 `SW[2] ? clkdiv[a] : clkdiv[b]` 作为 CPU 时钟时，Vivado 可能让该时钟走普通 routing/LUT mux，导致不同分频位和 mux 组合表现不一致，出现 `FA123456`、全 8 等不稳定现象。当前 `IO/clk_div.v` 固定使用 `clkdiv[0]` 经 `BUFG` 输出 `Clk_CPU`，即 50 MHz；该方案经用户实板测试 `testac.coe` 可进入成功动画。
 - 已在 `feature/interrupt-exception` 分支完成单级中断/异常基础实现并提交版本边界 `feat: implement single-level trap handling`：支持非法指令、ECALL/SYSCALL、timer interrupt、SEPC/SCAUSE/STATUS/INTMASK、ERET/ERETN 和 top 级 trap 测试程序。
 - 当前进入 `feature/ps2-keyboard` 分支。已把用户提供的 `PS2接口` 文件整理到 `IO/PS2/`，并开始将 PS/2 键盘作为 MMIO 外设接入板级系统。
+- 当前进入 `dino` 分支（自 `merge: vga display milestone` 切出），目标是 90–100 分阶段的 VGA 恐龙游戏，按老师要求用计时中断驱动游戏帧。
+- `dino` 分支已打通软件编程计时中断整条链路：`IO/MIO_BUS.v` 新增 `0xF0000004` 的 `counter_we` 译码（通道选择沿用老师 SPIO 锁存 `0xF0000000` 低 2 位的约定）；`rtl/SCPU.v` 的 `int_pending` 改为 `INT` 上升沿置位，避免 Counter_x 一拍宽脉冲（1 个 clk0 周期 ≈ 64 个 CPU 周期）在 ERET 后重复触发；top 仿真改用真实 `IO/MIO_BUS.v`，删除 `sim/board_sim_models.v` 中已脱节的 MIO_BUS 行为副本。冒烟程序 `asm2coe/timer_smoke.S`（`coe/board/I_timer_smoke.coe`）在不使用 `--force-int-*` 的情况下验证周期中断，`--check-timer-int` 通过，且既有全部回归（Test-8/37/AUIPC、trap、VGA、PS/2、exception smoke、双 top 编译检查）保持通过。
 
 支持的指令如下：
 

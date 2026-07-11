@@ -20,6 +20,7 @@
 ./IO/Enter.v
 ./IO/clk_div.v
 ./IO/Counter_3_IO.v
+./IO/MIO_BUS.v
 ./IO/PS2/PS2KB.v
 ./IO/PS2/PS2IO.v
 ./IO/VGA/VGA_Scan.v
