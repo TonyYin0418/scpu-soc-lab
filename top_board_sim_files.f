@@ -21,11 +21,13 @@
 ./IO/clk_div.v
 ./IO/Counter_3_IO.v
 ./IO/MIO_BUS.v
+./IO/game_timer.v
 ./IO/PS2/PS2KB.v
 ./IO/PS2/PS2IO.v
-./IO/VGA/VGA_Scan.v
-./IO/VGA/VGAIO.v
-./IO/VGA/vga_font_roms.v
+./IO/VGA/vga_timing.v
+./IO/VGA/vga_font_rom.v
 ./IO/VGA/vga_text_ram.v
+./IO/VGA/vga_text_renderer.v
+./IO/VGA/vga_top.v
 ./board/top.v
 ./sim/top_board_tb.v

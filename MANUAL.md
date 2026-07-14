@@ -583,13 +583,14 @@ edf/SSeg7.edf
 5. 在 Hardware Manager 中 **Open Target → Auto Connect → Program Device**。
 6. 复位后观察数码管输出；当前 CPU 时钟固定为 50 MHz，`SW[2]` 不再用于切换 CPU 快慢。
 
-当前 `feature/vga-display` 分支还新增了 VGA 显示器输出。Vivado Design Sources 需要额外加入：
+当前 `feature/vga-redesign` 分支重新实现了 VGA 文本显示输出。Vivado Design Sources 需要额外加入：
 
 ```text
-IO/VGA/VGA_Scan.v
-IO/VGA/VGAIO.v
-IO/VGA/vga_font_roms.v
+IO/VGA/vga_timing.v
+IO/VGA/vga_font_rom.v
 IO/VGA/vga_text_ram.v
+IO/VGA/vga_text_renderer.v
+IO/VGA/vga_top.v
 ```
 
 顶层新增端口：
@@ -602,7 +603,7 @@ VGA_HS
 VGA_VS
 ```
 
-不要把 `docs/reference/vga/*.v` 加入 Vivado Design Sources；那里只保存老师原始参考文件，实际编译使用 `IO/VGA/` 下整理后的版本。
+不要把 `docs/reference/vga/*.v` 加入 Vivado Design Sources；那里只保存老师原始参考文件。当前 active 编译路径使用 `IO/VGA/` 下按职责拆分后的重新实现版本。
 
 同时把下面这个字库初始化文件加入 Vivado 工程，或至少保证综合运行目录能找到它：
 
@@ -622,7 +623,7 @@ VGA 文本显存地址约定：
 ```text
 base = 0xC0000000
 addr = base + (row * 80 + col) * 4
-data[15:8] = 颜色属性，8'hFF 可作为白色前景
+data[15:8] = 颜色属性；高半字节 7/A/B/C/E/F 分别为暗灰/绿/青/红/黄/白，其他值回退为同亮度灰色
 data[7:0]  = ASCII 字符码
 ```
 
@@ -633,9 +634,9 @@ data[7:0]  = ASCII 字符码
 向 0xC0000004 写 0x0000ff42  # 第 2 个字符显示白色 B
 ```
 
-当前只保证 8x8 ASCII 文本模式，80 列 × 60 行。`Hzk16.coe` 和 16x16 中文字库接口已保留，但复杂中文显示不是当前门禁。
+当前只保证 8x8 ASCII 文本模式，80 列 × 60 行。`Hzk16.coe` 暂不进入 active 编译路径，复杂中文显示不是当前门禁。
 
-VGA 使用老师提供的 `VGAIO/VGA_Scan` 路径。`VGAIO` 内部用 100 MHz 主时钟分频得到约 25 MHz VGA 扫描时钟；这和老师代码一致。若后续遇到时序问题，再考虑把 VGA 像素时钟改成 MMCM/Clocking Wizard 生成的标准 25.175 MHz。
+VGA 使用 `vga_timing` 在 100 MHz 主时钟下生成 4 分频 clock-enable，等效 25 MHz 像素节拍；没有把分频计数器输出作为新的派生时钟。若后续遇到显示器兼容性或时序问题，再考虑用 MMCM/Clocking Wizard 生成标准 25.175 MHz 像素时钟。
 
 VGA 相关 top 级仿真：
 
@@ -859,6 +860,102 @@ SW[7:5] = 000  # 数码管显示游戏帧号心跳
 是否为 dino 分支版本。
 
 ## 8. 从汇编生成 COE
+
+### 8.1 构建 Dinosaur 游戏
+
+游戏位于 `game/`。Makefile 优先使用 `riscv64-elf-gcc`，本机未安装时自动
+使用 Homebrew LLVM + LLD：
+
+```bash
+cd game
+make clean
+make toolchain-info
+make
+make install-coe
+```
+
+`make` 会验证 RV32I 属性、禁止 M 扩展、无未解析符号以及 1024-word ROM
+容量。`make install-coe` 更新 `coe/board/I_dino_game.coe`。当前完整玩法版本为
+869/1024 words：包含自定义恐龙/仙人掌/飞鸟像素字模、站立与下蹲碰撞盒、
+READY/RUNNING/PAUSED/GAME OVER 状态和局部重绘。操作键为 Space/W/↑ 跳跃、
+S/↓ 下蹲、P 暂停、R/Enter 回到 READY；空中按住下蹲会加速落地。
+Vivado 的 `ROM_D` 需要重新选择更新后的 COE 后重新生成 IP。
+
+帧节拍不再由 C 忙等延时决定。`IO/game_timer.v` 复位后默认关闭，游戏向
+`0xFFFFFE00` 写 1 后，在 50 MHz CPU 时钟下产生 25 Hz 单周期 IRQ；软件再向
+`0xFFFFFF00` 写 `0x40` 打开 CPU 定时中断。固定向量 `0x340` 的汇编 ISR 保存/
+恢复全部整数寄存器，只累加 `frame_ticks`，物理、键盘和 VGA 写入仍在主循环。
+旧 `Counter_x` 只有在软件实际配置通道 0 后才允许接入 CPU，避免其上电下溢
+形成持续高电平中断。
+
+已有 Vivado 工程升级到这个游戏版本时，必须先确认 CPU。中断版不能继续使用
+`edf/SCPU.edf`：它与当前软件没有共同验证过 `0x340` 定时向量、课程 ERET 编码
+和 `0xFFFFFF00` 中断掩码。应禁用或移除 `edf/SCPU.edf`，并加入：
+
+```text
+rtl/SCPU.v
+rtl/ctrl.v
+rtl/alu.v
+rtl/EXT.v
+rtl/NPC.v
+rtl/PC.v
+rtl/RF.v
+rtl/forward_unit.v
+rtl/hazard_unit.v
+rtl/exception_unit.v
+rtl/dm_controller.v
+```
+
+`rtl/ctrl_encode_def.v` 是这些 RTL 的 include 文件，需保证 `rtl/` 位于 include
+搜索路径。不得让 `edf/SCPU.edf` 与 `rtl/SCPU.v` 同时存在，否则会发生同名模块
+冲突或错误绑定。然后替换以下现有文件：
+
+```text
+board/top.v
+IO/VGA/vga_text_renderer.v
+IO/VGA/vga_font_rom.v
+```
+
+并新增：
+
+```text
+IO/game_timer.v
+```
+
+最后把指令 ROM 初始化文件更新为：
+
+```text
+coe/board/I_dino_game.coe
+```
+
+`game/*.c`、`game/*.S`、`game/linker.ld`、`sim/*` 和仓库根目录的 `*.f` 是构建/
+仿真输入，不加入 Vivado Design Sources。`IO/VGA/vga_text_ram.v` 本轮只有注释
+更新，已有工程无需因此替换；`IO/MIO_BUS.v` 和 PS/2 RTL 本轮没有功能改动。
+CPU RTL 即使仓库内容没有新改动，也必须按上面的列表替换老师 EDF，这是中断版
+的运行前提。更新 COE 后应在 `ROM_D` 的 IP 配置中重新选择该文件并重新生成
+Output Products，再重新综合、实现和生成 bitstream。
+
+若实板能看见恐龙/仙人掌，但背景文字随机乱码和闪烁，必须使用最新版
+`board/top.v`。VGA 文本 RAM 的 CPU 写时钟应为 `Clk_CPU`：CPU 总线在下降沿
+更新，显存在下一上升沿写入，具有半周期建立时间。旧连接使用 `~Clk_CPU`，与
+总线更新处于同一边沿，在 RTL 仿真中可能正常，但实板会随机写坏显存。
+
+对应的本地门禁为：
+
+```bash
+cc -std=c11 -Wall -Wextra -Werror sim/game_logic_test.c -o build/game_logic_test
+build/game_logic_test
+iverilog -g2012 -Wall -s vga_text_renderer_tb -o build/vga_text_renderer_tb \
+  sim/vga_text_renderer_tb.v IO/VGA/vga_font_rom.v IO/VGA/vga_text_renderer.v
+vvp -n build/vga_text_renderer_tb
+python3 sim/run_top_board_sim.py --imem game/build/game.coe \
+  --max-cycles 300000 --check-dino-ready
+iverilog -g2012 -Wall -s game_timer_tb -o build/game_timer_tb \
+  sim/game_timer_tb.v IO/game_timer.v
+vvp -n build/game_timer_tb
+python3 sim/run_top_board_sim.py --imem game/build/game.coe \
+  --max-cycles 4300000 --send-ps2-key 29 --check-dino-tick
+```
 
 老师提供的工具位于 `asm2coe/`，需要 RISC-V GNU 工具链。Linux/WSL 中执行：
 

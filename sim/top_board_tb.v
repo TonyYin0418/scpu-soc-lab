@@ -6,7 +6,9 @@
 // 1. CPU 写 0xE0000000 显示 MMIO 时，打印 display_write；
 // 2. Multi_8CH32 当前输出变化时，打印 sevenseg_hex；
 // 3. dump build/top_board_tb.vcd，可在 GTKWave 中查看 disp_an_o/disp_seg_o。
-module top_board_tb;
+module top_board_tb #(
+    parameter integer GAME_TIMER_PERIOD = 2_000_000
+);
 
     reg         clk;
     reg         rstn;
@@ -39,17 +41,21 @@ module top_board_tb;
     integer sw_value;
     integer check_vga;
     integer check_vga_text;
-    integer check_timer_int;
-    integer timer_int_last_cycle;
-    integer dump_vga_text_at;
-    integer dump_row;
-    integer dump_col;
-    reg [7:0] dump_ch;
+    integer check_dino_ready;
+    integer check_dino_tick;
+    integer check_ps2_smoke;
+    integer check_dino_frames;
     integer vga_green_samples;
     integer vga_hs_edges;
     integer vga_vs_edges;
     integer saw_vga_o;
     integer saw_vga_k;
+    reg [5:0] dino_tiles;
+    reg [4:0] ready_letters;
+    integer saw_game_timer_enable;
+    integer saw_timer_vector;
+    integer saw_first_score;
+    integer saw_score_five;
     integer saw_1111;
     integer saw_2222;
     integer saw_3333;
@@ -66,7 +72,7 @@ module top_board_tb;
     assign ps2_clk  = ps2_clk_drive_low  ? 1'b0 : 1'bz;
     assign ps2_data = ps2_data_drive_low ? 1'b0 : 1'bz;
 
-    top U_TOP(
+    top #(.GAME_TIMER_PERIOD(GAME_TIMER_PERIOD)) U_TOP(
         .clk(clk),
         .rstn(rstn),
         .sw_i(sw_i),
@@ -102,14 +108,21 @@ module top_board_tb;
         sw_value = 16'h0000; // 默认 SW[7:5]=000，看程序写入的显示通道 data0。
         check_vga = 0;
         check_vga_text = 0;
-        check_timer_int = 0;
-        timer_int_last_cycle = -1;
-        dump_vga_text_at = -1;
+        check_dino_ready = 0;
+        check_dino_tick = 0;
+        check_ps2_smoke = 0;
+        check_dino_frames = 0;
         vga_green_samples = 0;
         vga_hs_edges = 0;
         vga_vs_edges = 0;
         saw_vga_o = 0;
         saw_vga_k = 0;
+        dino_tiles = 6'b0;
+        ready_letters = 5'b0;
+        saw_game_timer_enable = 0;
+        saw_timer_vector = 0;
+        saw_first_score = 0;
+        saw_score_five = 0;
         saw_1111 = 0;
         saw_2222 = 0;
         saw_3333 = 0;
@@ -134,8 +147,10 @@ module top_board_tb;
         dump_vcd = $test$plusargs("DUMP_VCD");
         check_vga = $test$plusargs("CHECK_VGA_GREEN");
         check_vga_text = $test$plusargs("CHECK_VGA_TEXT");
-        check_timer_int = $test$plusargs("CHECK_TIMER_INT");
-        void'($value$plusargs("DUMP_VGA_TEXT_AT=%d", dump_vga_text_at));
+        check_dino_ready = $test$plusargs("CHECK_DINO_READY");
+        check_dino_tick = $test$plusargs("CHECK_DINO_TICK");
+        check_ps2_smoke = $test$plusargs("CHECK_PS2_SMOKE");
+        check_dino_frames = $test$plusargs("CHECK_DINO_FRAMES");
         void'($value$plusargs("SW=%h", sw_value));
         void'($value$plusargs("IMEM=%s", imem_file));
         void'($value$plusargs("DMEM=%s", dmem_file));
@@ -167,10 +182,16 @@ module top_board_tb;
             $display("[TOP_SIM] CHECK_VGA enabled: expect SW[15]=1 green test screen");
         if (check_vga_text)
             $display("[TOP_SIM] CHECK_VGA_TEXT enabled: expect writes cell0=ff4f, cell1=ff4b");
-        if (check_timer_int)
-            $display("[TOP_SIM] CHECK_TIMER_INT enabled: expect ISR display_write ticks 1..3 without forced INT");
+        if (check_dino_ready)
+            $display("[TOP_SIM] CHECK_DINO_READY enabled: expect custom dino tiles and READY state");
+        if (check_dino_tick)
+            $display("[TOP_SIM] CHECK_DINO_TICK enabled: expect timer enable, vector 0x340 and score tick");
+        if (check_ps2_smoke)
+            $display("[TOP_SIM] CHECK_PS2_SMOKE enabled: expect ready bit plus sent scan code");
+        if (check_dino_frames)
+            $display("[TOP_SIM] CHECK_DINO_FRAMES enabled: expect five interrupt-driven frames without framebuffer loss");
         if (force_int_start >= 0) begin
-            force U_TOP.counter0_OUT = 1'b0;
+            force U_TOP.cpu_timer_irq = 1'b0;
             $display("[TOP_SIM] timer INT held low until cycle %0d", force_int_start);
         end
         #100 rstn = 1'b1;
@@ -251,24 +272,27 @@ module top_board_tb;
         if (rstn) begin
             cycle = cycle + 1;
 
-            // 模拟按下 BTN0 约 30000 周期（覆盖游戏若干帧）后松开。
-            if (press_btn_at >= 0) begin
-                if (cycle == press_btn_at) begin
-                    btn_i = 5'b00001;
-                    $display("[TOP_SIM] cycle=%0d press BTN0", cycle);
-                end
-                if (cycle == press_btn_at + 30000) begin
-                    btn_i = 5'b00000;
-                    $display("[TOP_SIM] cycle=%0d release BTN0", cycle);
-                end
+            if (U_TOP.mem_w && (U_TOP.addr_bus == 32'hffff_fe00) && U_TOP.Cpu_data2bus[0])
+                saw_game_timer_enable = 1;
+            if (U_TOP.PC == 32'h0000_0340)
+                saw_timer_vector = 1;
+            if (U_TOP.mem_w && (U_TOP.addr_bus == 32'he000_0000) &&
+                (U_TOP.Cpu_data2bus == 32'h0000_0001))
+                saw_first_score = 1;
+            if (U_TOP.mem_w && (U_TOP.addr_bus == 32'he000_0000) &&
+                (U_TOP.Cpu_data2bus == 32'h0000_0005))
+                saw_score_five = 1;
+            if (check_dino_tick && saw_game_timer_enable && saw_timer_vector && saw_first_score) begin
+                $display("[TOP_SIM][PASS] dino timer interrupt advanced first frame and score");
+                $finish;
             end
 
             if ((force_int_start >= 0) && (cycle == force_int_start)) begin
-                force U_TOP.counter0_OUT = 1'b1;
+                force U_TOP.cpu_timer_irq = 1'b1;
                 $display("[TOP_SIM] cycle=%0d force timer INT high", cycle);
             end
             if ((force_int_end >= 0) && (cycle == force_int_end)) begin
-                force U_TOP.counter0_OUT = 1'b0;
+                force U_TOP.cpu_timer_irq = 1'b0;
                 $display("[TOP_SIM] cycle=%0d force timer INT low", cycle);
             end
 
@@ -280,21 +304,10 @@ module top_board_tb;
                 $display("[TOP_SIM] cycle=%0d pc=%08x display_write=%08x",
                          cycle, U_TOP.PC, U_TOP.Cpu_data2bus);
                 maybe_finish_testac(U_TOP.Cpu_data2bus);
-                if (check_timer_int) begin
-                    // 相邻两次 tick 必须隔开一个像样的周期。间隔过近说明
-                    // 同一个 INT 脉冲重复触发（中断风暴），判 FAIL。
-                    if ((timer_int_last_cycle >= 0) &&
-                        (cycle - timer_int_last_cycle < 1000)) begin
-                        $display("[TOP_SIM][FAIL] timer ticks only %0d cycles apart: interrupt storm",
-                                 cycle - timer_int_last_cycle);
-                        $finish;
-                    end
-                    timer_int_last_cycle = cycle;
-                    if (U_TOP.Cpu_data2bus >= 32'd3) begin
-                        $display("[TOP_SIM][PASS] timer interrupt fired %0d times with periodic spacing",
-                                 U_TOP.Cpu_data2bus);
-                        $finish;
-                    end
+                if (check_ps2_smoke && send_ps2_key >= 0 &&
+                    (U_TOP.Cpu_data2bus == (32'h0000_0100 | send_ps2_key[7:0]))) begin
+                    $display("[TOP_SIM][PASS] PS/2 MMIO delivered scan code with ready bit");
+                    $finish;
                 end
             end
 
@@ -311,6 +324,45 @@ module top_board_tb;
                     $display("[TOP_SIM][PASS] VGA text MMIO wrote OK into cells 0 and 1");
                     $finish;
                 end
+                if ((U_TOP.addr_bus[14:2] == 13'd3770) && (U_TOP.Cpu_data2bus[7:0] == 8'h01)) dino_tiles[0] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd3771) && (U_TOP.Cpu_data2bus[7:0] == 8'h02)) dino_tiles[1] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd3850) && (U_TOP.Cpu_data2bus[7:0] == 8'h03)) dino_tiles[2] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd3851) && (U_TOP.Cpu_data2bus[7:0] == 8'h04)) dino_tiles[3] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd3930) && (U_TOP.Cpu_data2bus[7:0] == 8'h05)) dino_tiles[4] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd3931) && (U_TOP.Cpu_data2bus[7:0] == 8'h06)) dino_tiles[5] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd995) && (U_TOP.Cpu_data2bus[7:0] == 8'h52)) ready_letters[0] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd996) && (U_TOP.Cpu_data2bus[7:0] == 8'h45)) ready_letters[1] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd997) && (U_TOP.Cpu_data2bus[7:0] == 8'h41)) ready_letters[2] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd998) && (U_TOP.Cpu_data2bus[7:0] == 8'h44)) ready_letters[3] = 1'b1;
+                if ((U_TOP.addr_bus[14:2] == 13'd999) && (U_TOP.Cpu_data2bus[7:0] == 8'h59)) ready_letters[4] = 1'b1;
+            end
+
+            if (check_dino_ready && (&dino_tiles) && (&ready_letters) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[3770] == 16'hff01) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[3771] == 16'hff02) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[3850] == 16'hff03) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[3851] == 16'hff04) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[3930] == 16'hff05) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[3931] == 16'hff06) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[995]  == 16'hee52) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[999]  == 16'hee59) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[100]  == 16'h0020) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[2000] == 16'h0020) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[4500] == 16'h0020)) begin
+                $display("[TOP_SIM][PASS] dino READY framebuffer is stable and uncorrupted");
+                $finish;
+            end
+
+            if (check_dino_frames && saw_score_five &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[191]  == 16'hbb44) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[201]  == 16'hbb52) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[4000] == 16'haa2d) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[9]    == 16'hee30) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[12]   == 16'hee35) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[100]  == 16'h0020) &&
+                (U_TOP.U12_VGA_TOP.U_TEXT_RAM.mem[2000] == 16'h0020)) begin
+                $display("[TOP_SIM][PASS] five timer frames kept static and background cells intact");
+                $finish;
             end
 
             if (check_vga) begin
@@ -336,22 +388,6 @@ module top_board_tb;
                 last_disp_num = U_TOP.Disp_num;
                 $display("[TOP_SIM] cycle=%0d pc=%08x sevenseg_hex=%08x an=%02x seg=%02x",
                          cycle, U_TOP.PC, U_TOP.Disp_num, disp_an_o, disp_seg_o);
-            end
-
-            // 把文本显存按 80x60 打印成 ASCII 画面，检查游戏渲染结果。
-            if ((dump_vga_text_at >= 0) && (cycle == dump_vga_text_at)) begin
-                $display("[TOP_SIM] VGA text dump at cycle=%0d:", cycle);
-                for (dump_row = 0; dump_row < 60; dump_row = dump_row + 1) begin
-                    $write("[VGA %02d] ", dump_row);
-                    for (dump_col = 0; dump_col < 80; dump_col = dump_col + 1) begin
-                        dump_ch = U_TOP.U12_VGA_TEXT_RAM.mem[dump_row * 80 + dump_col][7:0];
-                        if ((dump_ch >= 8'h20) && (dump_ch < 8'h7f))
-                            $write("%c", dump_ch);
-                        else
-                            $write(".");
-                    end
-                    $write("\n");
-                end
             end
 
             if (cycle > max_cycles) begin

@@ -1,34 +1,104 @@
-# 恐龙游戏启动代码和中断向量。
-#
-# 布局（与 rtl/exception_unit.v 的固定向量一致）：
-#   0x000  复位入口：设 sp 后跳 main
-#   0x300  非法指令向量（不应到达，死循环便于数码管定位 PC）
-#   0x320  ECALL 向量（不应到达）
-#   0x340  计时中断向量：ticks++ 后 ERET
-#
-# ISR 只递增 ticks，游戏逻辑全部在 main 循环里按 tick 推进；
-# 这样中断随时打断主循环都不会破坏正在画一半的画面状态。
-
-    .section .text.init
+    .option norvc
+    .section .text.start, "ax", @progbits
     .globl _start
-_start:
-    li   sp, 0x1000             # 栈顶 = 4KB RAM 末尾，向下生长
-    call main
-1:  j    1b                     # main 不应返回
+    .type _start, @function
 
-    .org 0x300                  # 非法指令
-    j    .
-    .org 0x320                  # ECALL
-    j    .
-    .org 0x340                  # 计时中断
-    addi sp, sp, -8             # 借用被打断上下文的栈保存现场
-    sw   t0, 0(sp)
-    sw   t1, 4(sp)
-    la   t0, ticks
-    lw   t1, 0(t0)
+_start:
+    la sp, __stack_top
+
+    /* C requires zero-initialized .bss. */
+    la t0, __bss_start
+    la t1, __bss_end
+1:
+    bgeu t0, t1, 2f
+    sw zero, 0(t0)
+    addi t0, t0, 4
+    jal zero, 1b
+
+2:
+    call main
+
+3:
+    jal zero, 3b
+
+    .size _start, . - _start
+
+    /*
+     * Timer vector fixed by rtl/ctrl_encode_def.v at 0x340. Interrupts are
+     * asynchronous to C, so preserve every integer register that software may
+     * be using, publish one pending frame tick, then execute the course ERET.
+     */
+    .section .text.trap, "ax", @progbits
+    .globl timer_trap
+    .type timer_trap, @function
+timer_trap:
+    addi sp, sp, -120
+    sw ra,   0(sp)
+    sw gp,   4(sp)
+    sw tp,   8(sp)
+    sw t0,  12(sp)
+    sw t1,  16(sp)
+    sw t2,  20(sp)
+    sw s0,  24(sp)
+    sw s1,  28(sp)
+    sw a0,  32(sp)
+    sw a1,  36(sp)
+    sw a2,  40(sp)
+    sw a3,  44(sp)
+    sw a4,  48(sp)
+    sw a5,  52(sp)
+    sw a6,  56(sp)
+    sw a7,  60(sp)
+    sw s2,  64(sp)
+    sw s3,  68(sp)
+    sw s4,  72(sp)
+    sw s5,  76(sp)
+    sw s6,  80(sp)
+    sw s7,  84(sp)
+    sw s8,  88(sp)
+    sw s9,  92(sp)
+    sw s10, 96(sp)
+    sw s11, 100(sp)
+    sw t3, 104(sp)
+    sw t4, 108(sp)
+    sw t5, 112(sp)
+    sw t6, 116(sp)
+
+    la t0, frame_ticks
+    lw t1, 0(t0)
     addi t1, t1, 1
-    sw   t1, 0(t0)
-    lw   t0, 0(sp)
-    lw   t1, 4(sp)
-    addi sp, sp, 8
-    .word 0x00100073            # ERET：返回 SEPC 重新执行被打断的指令
+    sw t1, 0(t0)
+
+    lw ra,   0(sp)
+    lw gp,   4(sp)
+    lw tp,   8(sp)
+    lw t0,  12(sp)
+    lw t1,  16(sp)
+    lw t2,  20(sp)
+    lw s0,  24(sp)
+    lw s1,  28(sp)
+    lw a0,  32(sp)
+    lw a1,  36(sp)
+    lw a2,  40(sp)
+    lw a3,  44(sp)
+    lw a4,  48(sp)
+    lw a5,  52(sp)
+    lw a6,  56(sp)
+    lw a7,  60(sp)
+    lw s2,  64(sp)
+    lw s3,  68(sp)
+    lw s4,  72(sp)
+    lw s5,  76(sp)
+    lw s6,  80(sp)
+    lw s7,  84(sp)
+    lw s8,  88(sp)
+    lw s9,  92(sp)
+    lw s10, 96(sp)
+    lw s11, 100(sp)
+    lw t3, 104(sp)
+    lw t4, 108(sp)
+    lw t5, 112(sp)
+    lw t6, 116(sp)
+    addi sp, sp, 120
+    .word 0x00100073
+    .size timer_trap, . - timer_trap

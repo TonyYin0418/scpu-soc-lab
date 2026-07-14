@@ -70,10 +70,11 @@ def main() -> None:
     parser.add_argument("--dump-vcd", action="store_true", help="dump build/top_board_tb.vcd")
     parser.add_argument("--check-vga", action="store_true", help="check VGA green test path; use --sw 8000")
     parser.add_argument("--check-vga-text", action="store_true", help="check CPU writes OK into VGA text MMIO")
-    parser.add_argument("--check-timer-int", action="store_true",
-                        help="check software-programmed Counter_x timer interrupts fire repeatedly")
-    parser.add_argument("--dump-vga-text-at", type=int,
-                        help="print the 80x60 VGA text RAM as ASCII at this cycle")
+    parser.add_argument("--check-dino-ready", action="store_true", help="check game reaches READY with custom dino tiles")
+    parser.add_argument("--check-dino-tick", action="store_true", help="check game timer interrupt advances the first frame")
+    parser.add_argument("--check-ps2-smoke", action="store_true", help="check PS/2 smoke ROM reports ready plus sent key")
+    parser.add_argument("--check-dino-frames", action="store_true", help="check five interrupt-driven game frames preserve framebuffer")
+    parser.add_argument("--timer-period", type=int, help="override top-level game timer period for simulation")
     parser.add_argument("--force-int-start", type=int, help="force timer INT high at this top_tb cycle")
     parser.add_argument("--force-int-end", type=int, help="release forced timer INT at this top_tb cycle")
     parser.add_argument("--send-ps2-key", help="send a PS/2 scan code byte in top simulation, hex")
@@ -108,10 +109,14 @@ def main() -> None:
         vvp_args.append("+CHECK_VGA_GREEN")
     if args.check_vga_text:
         vvp_args.append("+CHECK_VGA_TEXT")
-    if args.check_timer_int:
-        vvp_args.append("+CHECK_TIMER_INT")
-    if args.dump_vga_text_at is not None:
-        vvp_args.append(f"+DUMP_VGA_TEXT_AT={args.dump_vga_text_at}")
+    if args.check_dino_ready:
+        vvp_args.append("+CHECK_DINO_READY")
+    if args.check_dino_tick:
+        vvp_args.append("+CHECK_DINO_TICK")
+    if args.check_ps2_smoke:
+        vvp_args.append("+CHECK_PS2_SMOKE")
+    if args.check_dino_frames:
+        vvp_args.append("+CHECK_DINO_FRAMES")
     if args.force_int_start is not None:
         vvp_args.append(f"+FORCE_INT_START={args.force_int_start}")
     if args.force_int_end is not None:
@@ -124,7 +129,7 @@ def main() -> None:
         vvp_args.append(f"+PRESS_BTN_AT={args.press_btn_at}")
 
     out_path = ROOT / args.out
-    run([
+    compile_cmd = [
         "iverilog",
         "-g2012",
         "-Wall",
@@ -134,7 +139,10 @@ def main() -> None:
         out_path.as_posix(),
         "-f",
         "top_board_sim_files.f",
-    ])
+    ]
+    if args.timer_period is not None:
+        compile_cmd.insert(1, f"-Ptop_board_tb.GAME_TIMER_PERIOD={args.timer_period}")
+    run(compile_cmd)
     run(["vvp", "-n", out_path.as_posix(), *vvp_args])
 
 

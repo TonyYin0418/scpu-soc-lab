@@ -1,8 +1,11 @@
 `timescale 1ns / 1ps
 
 // Nexys A7 板级顶层。
-// 本阶段使用老师提供的 SCPU.edf 和外围 EDF，按 schematic.pdf 连接。
-module top(
+// Dinosaur 中断版必须绑定 rtl/SCPU.v；老师 SCPU.edf 的中断向量和返回
+// 语义不属于当前软件契约，不能与 rtl/SCPU.v 同时加入 Vivado 工程。
+module top #(
+    parameter integer GAME_TIMER_PERIOD = 2_000_000
+)(
     input             clk,
     input             rstn,
     input      [15:0] sw_i,
@@ -58,10 +61,23 @@ module top(
     wire        mem_w;
     wire        CPU_MIO;
 
-    // 计数器通道 0 按原理图连接到 INT；老师 SCPU 当前可直接使用该接口。
+    // 计数器通道 0 保留老师原接口；游戏定时器复位后默认关闭，软件向
+    // 0xFFFF_FE00 写 bit0=1 后产生稳定的 25 Hz 单周期中断脉冲。
     wire counter0_OUT;
     wire counter1_OUT;
     wire counter2_OUT;
+    wire game_tick_irq;
+    wire game_timer_we = mem_w && (addr_bus == 32'hffff_fe00);
+    reg  legacy_timer_armed;
+    wire cpu_timer_irq = game_tick_irq | (legacy_timer_armed & counter0_OUT);
+
+    game_timer #(.PERIOD_CYCLES(GAME_TIMER_PERIOD)) U_GAME_TIMER(
+        .clk(Clk_CPU),
+        .rst(rst),
+        .enable_we(game_timer_we),
+        .enable_data(Cpu_data2bus[0]),
+        .tick_irq(game_tick_irq)
+    );
 
     ROM_D U2_ROMD(
         .a(PC[11:2]),
@@ -80,7 +96,7 @@ module top(
         .Data_out(Cpu_data2bus),
         .dm_ctrl(dm_ctrl),
         .CPU_MIO(CPU_MIO),
-        .INT(counter0_OUT)
+        .INT(cpu_timer_irq)
     );
 
     // MIO_BUS 将 CPU 地址空间划分为数据 RAM、GPIO 和计数器外设。
@@ -178,6 +194,15 @@ module top(
     wire [1:0]  counter_set;
     wire [13:0] GPIOf0;
 
+    // Counter_x 上电从 0 下溢后 counter0_OUT 会保持为 1；只有软件真正
+    // 写过通道 0 后才允许它进入 CPU，避免未配置计数器制造中断风暴。
+    always @(posedge Clk_IO or posedge rst) begin
+        if (rst)
+            legacy_timer_armed <= 1'b0;
+        else if (counter_we && (counter_set == 2'b00))
+            legacy_timer_armed <= 1'b1;
+    end
+
     SPIO U7_SPIO(
         .clk(Clk_IO),
         .rst(rst),
@@ -243,57 +268,29 @@ module top(
         .seg_sout(disp_seg_o)
     );
 
-    // VGA 显示。
-    //
-    // 使用老师提供的 VGAIO/VGA_Scan 作为最终扫描与像素输出路径。
-    // 为后续写应用程序预留一个最简单的文本显存 MMIO：
-    //   0xC0000000 + (row * 80 + col) * 4
-    // 写入低 16 位 {颜色属性[15:8], ASCII[7:0]}，例如 16'hff41 显示白色 'A'。
-    //
-    // SW[15] 是硬件排错开关：
-    //   SW[15]=1：强制输出绿色全屏，用来确认线缆、管脚和 VGA 同步；
-    //   SW[15]=0：显示 CPU 可写文本显存。
-    wire [8:0]  vga_row;
-    wire [9:0]  vga_col;
-    wire [12:0] vga_vram_addr;
-    wire [15:0] vga_vram_data;
-    wire        vga_rdn;
-
+    // VGA 文本显示。
+    // 软件写 0xC0000000 + (row * 80 + col) * 4 更新一个 16 位文本单元：
+    // {颜色属性[15:8], ASCII[7:0]}。SW[15]=1 强制绿色全屏，优先用于
+    // 排查 VGA 管脚、线缆和同步；SW[15]=0 显示 CPU 可写文本显存。
     wire        vga_text_we = mem_w && (addr_bus[31:16] == 16'hc000);
     wire [12:0] vga_text_addr = addr_bus[14:2];
 
-    // CPU 总线信号在 negedge Clk_CPU 更新（流水线寄存器下降沿翻转）。
-    // 显存写时钟必须用 Clk_CPU：写发生在 posedge Clk_CPU，距离总线变化
-    // 有半个周期建立时间。若用 Clk_IO(=~Clk_CPU)，采样沿和总线更新沿重合，
-    // 上板会出现随机显存写坏。
-    vga_text_ram U12_VGA_TEXT_RAM(
-        .cpu_clk  (Clk_CPU),
-        .cpu_we   (vga_text_we),
-        .cpu_waddr(vga_text_addr),
-        .cpu_wdata(Cpu_data2bus[15:0]),
-        .vga_raddr(vga_vram_addr),
-        .vga_rdata(vga_vram_data)
-    );
-
-    VGAIO U13_VGAIO(
-        .clk    (clk),
-        .rst    (rst),
-        .VRAMOUT(vga_vram_data),
-        .Pixel  (13'b0),
-        .Test   (SW[15] ? 14'h30f0 : 14'h0000),
-        .Din    (32'h4000_0001),
-        .Regaddr(4'b0),
-        .Cursor (13'b0),
-        .Blink  (clkdiv[24]),
-        .row    (vga_row),
-        .col    (vga_col),
-        .R      (VGA_R),
-        .G      (VGA_G),
-        .B      (VGA_B),
-        .HSYNC  (VGA_HS),
-        .VSYNC  (VGA_VS),
-        .VRAMA  (vga_vram_addr),
-        .rdn    (vga_rdn)
+    vga_top U12_VGA_TOP(
+        .clk       (clk),
+        .rst       (rst),
+        // CPU 总线在 negedge Clk_CPU 更新。显存改在下一个 posedge
+        // Clk_CPU 写入，留出半周期建立时间；不能使用 ~Clk_CPU，后者
+        // 与总线更新落在同一边沿，会在实板上造成随机显存写坏和闪烁。
+        .cpu_clk   (Clk_CPU),
+        .cpu_we    (vga_text_we),
+        .cpu_waddr (vga_text_addr),
+        .cpu_wdata (Cpu_data2bus[15:0]),
+        .test_green(SW[15]),
+        .VGA_R     (VGA_R),
+        .VGA_G     (VGA_G),
+        .VGA_B     (VGA_B),
+        .VGA_HS    (VGA_HS),
+        .VGA_VS    (VGA_VS)
     );
 
 endmodule
