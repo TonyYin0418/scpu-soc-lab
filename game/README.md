@@ -16,7 +16,7 @@ brew install riscv64-elf-gcc
 Build the game:
 
 ```bash
-cd my-app/game
+cd game
 make
 ```
 
